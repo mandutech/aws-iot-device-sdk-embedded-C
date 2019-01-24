@@ -1181,7 +1181,7 @@ static AwsIotTaskPoolJob_t * _fetchOrAllocateWorkItem( AwsIotTaskPoolCache_t * c
         {
             pJob = pTemp;
 
-            AwsIotTaskPool_Assert( IotQueue_IsQueued( pLink ) );
+            AwsIotTaskPool_Assert( IotLink_IsLinked( pLink ) );
 
             IotQueue_Remove( pLink );
 
@@ -1237,7 +1237,7 @@ static void _recycleWorkItem( AwsIotTaskPoolCache_t * const pCache, AwsIotTaskPo
     bool shouldRecycle = false;
 
     /* We should never try and recycling a job that is linked into some queue. */
-    AwsIotTaskPool_Assert( IotQueue_IsQueued( &pJob->link ) == false );
+    AwsIotTaskPool_Assert( IotLink_IsLinked( &pJob->link ) == false );
 
     /* We will always recycle the job if is marked for an impending wait operation, so the wait 
      * can complete safely. The cache may grow larger than the 'recycle limit', but it will shrink down 

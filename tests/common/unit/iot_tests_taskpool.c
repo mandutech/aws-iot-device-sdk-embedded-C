@@ -472,6 +472,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait )
         JobUserContext_t userContext = { 0 };
         AwsIotTaskPoolJob_t tpJobs[ _TASKPOOL_TEST_ITERATIONS ] = { 0 };
 
+        /* Initialize user context. */
+        TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
+
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
             /* Shedule the job NOT to be recycle in the callback, since the buffer is statically allocated. */
@@ -518,6 +521,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait )
         {
             TEST_ASSERT( AwsIotTaskPool_DestroyJob( pTaskPool, &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
         }
+
+        /* Destroy user context. */
+        AwsIotMutex_Destroy( &userContext.lock );
     }
     
     AwsIotTaskPool_Destroy( pTaskPool );
@@ -544,6 +550,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleOneThenWait )
         uint32_t count;
         uint32_t scheduled = 0;
         JobUserContext_t userContext = { 0 };
+
+        /* Initialize user context. */
+        TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
 
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
@@ -605,6 +614,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleOneThenWait )
             /* Ensure callback actually executed. */
             TEST_ASSERT( userContext.counter == scheduled );
         }
+
+        /* Destroy user context. */
+        AwsIotMutex_Destroy( &userContext.lock );
     }
 
     AwsIotTaskPool_Destroy( pTaskPool );
@@ -632,6 +644,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleAllThenWait )
         uint32_t scheduled = 0;
         JobUserContext_t userContext = { 0 };
         AwsIotTaskPoolJob_t * tpJobs[ _TASKPOOL_TEST_ITERATIONS ] = { 0 };
+
+        /* Initialize user context. */
+        TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
         
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
@@ -698,6 +713,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleAllThenWait )
 
         /* Wait until callback is executed. */
         TEST_ASSERT_TRUE( userContext.counter == scheduled );
+
+        /* Destroy user context. */
+        AwsIotMutex_Destroy( &userContext.lock );
     }
 
     AwsIotTaskPool_Destroy( pTaskPool );
@@ -723,8 +741,10 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
     TEST_ASSERT( pTaskPool != NULL );
 
     JobUserContext_t userContext = { 0 };
-
     AwsIotTaskPoolJob_t * tpJobs[ _TASKPOOL_TEST_ITERATIONS ] = { 0 };
+
+    /* Initialize user context. */
+    TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
 
     /* Create and schedule loop. */
     for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
@@ -819,6 +839,9 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
     {
         TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
     }
+
+    /* Destroy user context. */
+    AwsIotMutex_Destroy( &userContext.lock );
 
     AwsIotTaskPool_Destroy( pTaskPool );
 
