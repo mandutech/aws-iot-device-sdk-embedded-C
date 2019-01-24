@@ -33,6 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 /* Platform layer includes. */
 #include "platform/aws_iot_threads.h"
@@ -241,6 +242,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Create( const AwsIotTaskPoolInfo_t * const 
 
 AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
 {
+    uint32_t count;
     AwsIotTaskPoolError_t error = AWS_IOT_TASKPOOL_SUCCESS;
 
     /* Track how many threads the engine owns. */
@@ -306,7 +308,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
             _signalShutdown( pTaskPool );
 
             /* (3) Broadcast to all active threads to wake-up. Active threads do check the exit condition right after wakein up. */
-            for ( uint32_t count = 0; count < activeThreads; ++count )
+            for ( count = 0; count < activeThreads; ++count )
             {
                 AwsIotSemaphore_Post( &pTaskPool->dispatchSignal );
             }
@@ -314,9 +316,13 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
         _TASKPOOL_EXIT_CRITICAL_SECTION;
 
         /* (4) Wait for all active threads to reach the end of their life-span. */
-        for ( uint32_t count = 0; count < activeThreads; ++count )
+        for ( count = 0; count < activeThreads; ++count )
         {
             AwsIotSemaphore_Wait( &pTaskPool->startStopSignal );
+        }
+
+        while ( pTaskPool->activeThreads != 0 )
+        {
         }
 
         AwsIotTaskPool_Assert( pTaskPool->activeThreads == 0 );
@@ -591,7 +597,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPoo
                         AwsIotLogInfo( "Growing a Task pool with a new worker thread..." );
 
                         /* TODO TODO TODO if ( AwsIot_CreateDetachedThread( pTaskPool->stackSize, pTaskPool->priority, _taskPoolWorker, pTaskPool ) ) */
-                        if ( AwsIot_CreateDetachedThread( _taskPoolWorker, pTaskPool ) == false )
+                        if ( AwsIot_CreateDetachedThread( _taskPoolWorker, pTaskPool ) )
                         {
                             AwsIotSemaphore_Wait( &pTaskPool->startStopSignal );
 
@@ -818,6 +824,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TryCancel( const AwsIotTaskPool_t * pTaskPo
 
 static AwsIotTaskPoolError_t _createEngine( const AwsIotTaskPoolInfo_t * const pInfo, bool allocateTaskPool, AwsIotTaskPool_t ** const ppTaskPool )
 {
+    uint32_t count;
     AwsIotTaskPoolError_t error = AWS_IOT_TASKPOOL_SUCCESS;
 
     /* Check input values for consistency. */
@@ -889,7 +896,7 @@ static AwsIotTaskPoolError_t _createEngine( const AwsIotTaskPoolInfo_t * const p
                 }
 
                 /* Wait for threads to be ready to wait on the condition, so that threads are actually able to receive messages. */
-                for ( uint32_t count = 0; count < threadsCreated; ++count )
+                for ( count = 0; count < threadsCreated; ++count )
                 {
                     AwsIotSemaphore_Wait( &pTaskPool->startStopSignal );
                 }
@@ -901,7 +908,7 @@ static AwsIotTaskPoolError_t _createEngine( const AwsIotTaskPoolInfo_t * const p
                     _signalShutdown( pTaskPool );
 
                     /* Signal all threads to exit. */
-                    for ( uint32_t count = 0; count < threadsCreated; ++count )
+                    for ( count = 0; count < threadsCreated; ++count )
                     {
                         AwsIotSemaphore_Wait( &pTaskPool->startStopSignal );
                     }
@@ -1150,10 +1157,10 @@ static void _taskPoolWorker( void * pUserContext )
 
     _TASKPOOL_ENTER_CRITICAL_SECTION;
     {
-        pTaskPool->activeThreads--;
-
-        /* Signal that this worker completed initialization and it is ready to receive notifications. */
+        /* Signal that this worker is exiting. */
         AwsIotSemaphore_Post( &pTaskPool->startStopSignal );
+
+        pTaskPool->activeThreads--;
     }
     _TASKPOOL_EXIT_CRITICAL_SECTION;
 }
