@@ -118,6 +118,28 @@ typedef IotLink_t   IotQueue_t;
 #define IotLink_Container( type, pLink, linkName ) \
     ( ( type * ) ( ( ( uint8_t * ) ( pLink ) ) - offsetof( type, linkName ) ) )
 
+ /**
+ * @brief Iterates on all instances of a linear container.
+ *
+ * @param[in] pStart The first link to iterate forward from.
+ * @param[in] pLink Pointer to a link member.
+ */
+#define IotContainers_ForEach( pStart, pLink )  \
+    for( ( pLink ) = ( pStart )->pNext;         \
+         ( pLink ) != ( pStart );               \
+         ( pLink ) = ( pLink )->pNext )
+
+ /**
+ * @brief Iterates on all instances of a linear container safely.
+ *
+ * @param[in] pStart The first link to iterate forward from.
+ * @param[in] pLink Pointer to a link member.
+ */
+#define IotContainers_ForEachSafe( pStart, pLink, pTempLink )               \
+    for( ( pLink ) = ( pStart )->pNext, ( pTempLink ) = ( pLink )->pNext;   \
+         ( pLink ) != ( pStart );                                           \
+         ( pLink ) = ( pTempLink ), ( pTempLink ) = ( pLink )->pNext )
+
 /**
  * @functionspage{linear_containers,linear containers library}
  * - @functionname{linear_containers_function_link_islinked}

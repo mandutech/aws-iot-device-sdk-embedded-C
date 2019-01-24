@@ -91,6 +91,8 @@ int main( int argc,
 
     /* Run linear containers tests. */
     RUN_TEST_GROUP( Common_Unit_Linear_Containers );
+    RUN_TEST_GROUP( Common_Unit_TaskPool );
+    RUN_TEST_GROUP( Common_Stress_TaskPool );
 
     /* Return the number of test failures. This will cause a non-zero exit code
      * if any test fails. */

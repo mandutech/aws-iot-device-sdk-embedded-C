@@ -1,0 +1,83 @@
+@startuml
+skinparam classFontSize 8
+skinparam classFontName Helvetica
+autonumber
+
+participant "Application" as app
+participant "User Callback" as callback
+participant "Work Item" as workitem
+
+participant "Task Pool public API" as TP
+participant "Dispatch queue" as queue
+participant "Worker Threads" as workers
+participant "Task Pool Cache" as cache
+
+box "Task Pool" #LightBlue
+    participant TP
+    participant queue
+    participant workers
+    participant cache
+end box
+
+== Create Task Pool ==
+
+app -[#blue]> TP: AwsIotTaskPool_Create[Static]: create a Task 
+TP -> queue: Initialize dispatch queue
+activate queue
+TP -> workers: Create minimum number of worker threads
+activate workers
+TP -> cache: Initialize work items cache
+activate cache
+TP --[#blue]> app
+activate TP
+workers -> workers: Wait on incoming work items
+
+== Use Task Pool ==
+
+loop Application loop: Create and Schedule work items
+	app -[#blue]> TP: AwsIotTaskPool_MakeWorkItem: create a work item
+	TP -> cache: fetch or create work item
+	TP --[#blue]> app
+	activate workitem
+	note left: work item status: //ready//
+	
+	app -[#blue]> TP: AwsIotTaskPool_Schedule: schedule a work item
+	TP -> queue: Queue work item
+	TP -> TP: Grow pool up to maximum threads, if all threads are busy
+	TP -> workers: Signal incoming work item
+	TP --[#blue]> app
+	note left: work item status: //scheduled//
+	
+	loop Outer dispatch loop: Wait on incoming work items
+		workers -> queue: Dequeue next work item
+		loop Inner dispatch loop: Execute any queue work items in order
+			workers -[#green]> workitem: Invoke user callback
+			note left: work item status: //executing//
+			workitem -[#green]> callback: Invoke
+			activate callback
+			callback -[#blue]> TP: AwsIotTaskPool_RecycleWorkItem: recycle or destroy work item
+			TP -> cache: recycle or destroy work item
+			TP --[#blue]> callback
+			note left: work item status: //completed//
+			deactivate workitem
+			deactivate callback
+			workers -> workers: Move to next work item
+		end
+		workers -> workers: Wait on incoming work items
+	end
+	
+end
+	
+== Destroy Task Pool ==
+
+    app -[#blue]> TP: AwsIotTaskPool_Destroy: destroy the task pool
+	TP -> cache: Destroy all work items in the cache
+	deactivate cache
+	TP -> workers: Shutdown worker threads
+	deactivate workers
+	TP -> queue: Destroy all work items in the dispatch queue
+	deactivate queue
+    TP --[#blue]> app
+	deactivate TP
+
+@enduml
