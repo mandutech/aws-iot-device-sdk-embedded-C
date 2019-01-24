@@ -33,7 +33,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <stdio.h>
 
 /* Platform layer includes. */
 #include "platform/aws_iot_threads.h"
