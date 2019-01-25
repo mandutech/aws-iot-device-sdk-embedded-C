@@ -176,7 +176,7 @@ static void CleanupDelay( )
 /**
 * @brief A callback that recycles its job.
 */
-static void ExecutionWithRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
+static void ExecutionWithDestroyCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
 {
     AwsIotTaskPoolJobStatus_t status;
 
@@ -185,13 +185,13 @@ static void ExecutionWithRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPool
 
     EmulateWork( );
 
-    TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+    TEST_ASSERT( AwsIotTaskPool_DestroyJob( pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
 }
 
 /**
 * @brief A callback that does not recycle its job.
 */
-static void ExecutionWithoutRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
+static void ExecutionWithoutDestroyCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
 {
     AwsIotTaskPoolJobStatus_t status;
 
@@ -206,13 +206,11 @@ static void ExecutionWithoutRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskP
 /**
 * @brief A function to create a job.
 */
-StressJob_t * CreateWorkItem__Single( AwsIotTaskPool_t * pTaskPool )
+StressJob_t * CreateWorkItem__Single( AwsIotTaskPoolJob_t * pJob )
 {
-    AwsIotTaskPoolJob_t * pJob;
+    AwsIotTaskPoolError_t error = AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, pJob );
 
-    AwsIotTaskPoolError_t error = AwsIotTaskPool_CreateJob( pTaskPool, &ExecutionWithRecycleCb, NULL, &pJob );
-
-    if ( error  == AWS_IOT_TASKPOOL_SUCCESS )
+    if ( error == AWS_IOT_TASKPOOL_SUCCESS )
     {
         StressJob_t * pStress = malloc( sizeof( StressJob_t ) );
 
@@ -227,7 +225,7 @@ StressJob_t * CreateWorkItem__Single( AwsIotTaskPool_t * pTaskPool )
         }
         else
         {
-            TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+            TEST_ASSERT( AwsIotTaskPool_DestroyJob( pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
         }
     }
 
@@ -242,11 +240,11 @@ StressJob_t * CreateWorkItem__Single( AwsIotTaskPool_t * pTaskPool )
 TEST( Common_Stress_TaskPool, SingleWorkItems )
 {
     uint32_t countInner, countOuter;
-    AwsIotTaskPool_t * pTaskPool;
+    AwsIotTaskPool_t taskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 5, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
+    AwsIotTaskPoolJob_t jobs[ _TASKPOOL_STRESS_ITERATIONS_INNER ] = { 0 };
 
-    TEST_ASSERT( AwsIotTaskPool_Create( &tpInfo, &pTaskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
-    TEST_ASSERT( pTaskPool != NULL );
+    TEST_ASSERT( AwsIotTaskPool_Create( &tpInfo, &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
 
     countOuter = 0;
     for ( ; countOuter < _TASKPOOL_STRESS_ITERATIONS_OUTER; ++countOuter )
@@ -257,21 +255,21 @@ TEST( Common_Stress_TaskPool, SingleWorkItems )
         countInner = 0;
         for ( ; countInner < _TASKPOOL_STRESS_ITERATIONS_INNER; ++countInner )
         {
-            StressJob_t * pJob = CreateWorkItem__Single( pTaskPool );
+            StressJob_t * pStressJob = CreateWorkItem__Single( &jobs[ countInner ] );
 
-            if ( pJob != NULL )
+            if ( pStressJob != NULL )
             {
-                AwsIotTaskPoolError_t error = AwsIotTaskPool_Schedule( pTaskPool, pJob->pJob );
+                AwsIotTaskPoolError_t error = AwsIotTaskPool_Schedule( &taskPool, pStressJob->pJob );
 
                 if ( error == AWS_IOT_TASKPOOL_SUCCESS )
                 {
-                    IotQueue_Enqueue( &activeRequests, &pJob->activeRequestsLink );
+                    IotQueue_Enqueue( &activeRequests, &pStressJob->activeRequestsLink );
                 }
                 else
                 {
-                    TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, pJob->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+                    TEST_ASSERT( AwsIotTaskPool_DestroyJob( pStressJob->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
 
-                    free( pJob );
+                    free( pStressJob );
                 }
             }
         }
@@ -281,9 +279,9 @@ TEST( Common_Stress_TaskPool, SingleWorkItems )
             IotLink_t * pLink;
             IotContainers_ForEach( &activeRequests, pLink )
             {
-                StressJob_t * pItem = IotLink_Container( StressJob_t, pLink, activeRequestsLink );
+                StressJob_t * pStressItem = IotLink_Container( StressJob_t, pLink, activeRequestsLink );
 
-                TEST_ASSERT( AwsIotTaskPool_Wait( pTaskPool, pItem->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+                TEST_ASSERT( AwsIotTaskPool_Wait( &taskPool, pStressItem->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
             }
         }
 
@@ -298,7 +296,7 @@ TEST( Common_Stress_TaskPool, SingleWorkItems )
         }
     }
 
-    TEST_ASSERT( AwsIotTaskPool_Destroy( pTaskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
+    TEST_ASSERT( AwsIotTaskPool_Destroy( &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
 
     CleanupDelay( );
 }
@@ -311,11 +309,11 @@ TEST( Common_Stress_TaskPool, SingleWorkItems )
 TEST( Common_Stress_TaskPool, SingleWorkItemsPlusCancellation )
 {
     uint32_t countInner, countOuter;
-    AwsIotTaskPool_t * pTaskPool;
+    AwsIotTaskPool_t taskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 5, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
+    AwsIotTaskPoolJob_t jobs[ _TASKPOOL_STRESS_ITERATIONS_INNER ]= { 0 };
 
-    TEST_ASSERT( AwsIotTaskPool_Create( &tpInfo, &pTaskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
-    TEST_ASSERT( pTaskPool != NULL );
+    TEST_ASSERT( AwsIotTaskPool_Create( &tpInfo, &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
 
     countOuter = 0;
     for ( ; countOuter < _TASKPOOL_STRESS_ITERATIONS_OUTER; ++countOuter )
@@ -326,21 +324,21 @@ TEST( Common_Stress_TaskPool, SingleWorkItemsPlusCancellation )
         countInner = 0;
         for ( ; countInner < _TASKPOOL_STRESS_ITERATIONS_INNER; ++countInner )
         {
-            StressJob_t * pJob = CreateWorkItem__Single( pTaskPool );
+            StressJob_t * pStressJob = CreateWorkItem__Single( &jobs[ countInner ] );
 
-            if ( pJob != NULL )
+            if ( pStressJob != NULL )
             {
-                AwsIotTaskPoolError_t error = AwsIotTaskPool_Schedule( pTaskPool, pJob->pJob );
+                AwsIotTaskPoolError_t error = AwsIotTaskPool_Schedule( &taskPool, pStressJob->pJob );
 
                 if ( error == AWS_IOT_TASKPOOL_SUCCESS )
                 {
-                    IotQueue_Enqueue( &activeRequests, &pJob->activeRequestsLink );
+                    IotQueue_Enqueue( &activeRequests, &pStressJob->activeRequestsLink );
                 }
                 else
                 {
-                    TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, pJob->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+                    TEST_ASSERT( AwsIotTaskPool_DestroyJob( pStressJob->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
 
-                    free( pJob );
+                    free( pStressJob );
                 }
             }
         }
@@ -359,7 +357,7 @@ TEST( Common_Stress_TaskPool, SingleWorkItemsPlusCancellation )
 
                 StressJob_t * pItem = IotLink_Container( StressJob_t, pLink, activeRequestsLink );
 
-                if ( AwsIotTaskPool_TryCancel( pTaskPool, pItem->pJob, &status ) == AWS_IOT_TASKPOOL_SUCCESS )
+                if ( AwsIotTaskPool_TryCancel( &taskPool, pItem->pJob, &status ) == AWS_IOT_TASKPOOL_SUCCESS )
                 {
                     TEST_ASSERT( ( status == AWS_IOT_TASKPOOL_STATUS_READY ) || ( status == AWS_IOT_TASKPOOL_STATUS_SCHEDULED ) || ( status == AWS_IOT_TASKPOOL_STATUS_CANCELED ) );
                 }
@@ -381,7 +379,7 @@ TEST( Common_Stress_TaskPool, SingleWorkItemsPlusCancellation )
                         continue;
                     }
 
-                    TEST_ASSERT( AwsIotTaskPool_Wait( pTaskPool, pItem->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+                    TEST_ASSERT( AwsIotTaskPool_Wait( &taskPool, pItem->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
                 }
             }
 
@@ -397,7 +395,7 @@ TEST( Common_Stress_TaskPool, SingleWorkItemsPlusCancellation )
         }
     }
     
-    TEST_ASSERT( AwsIotTaskPool_Destroy( pTaskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
+    TEST_ASSERT( AwsIotTaskPool_Destroy( &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
 
     CleanupDelay( );
 }

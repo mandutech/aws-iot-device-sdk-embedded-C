@@ -80,9 +80,9 @@ typedef void ( * IotTaskPoolRoutine_t )( struct AwsIotTaskPool * pTaskPool, stru
 * @ingroup taskpool_datatypes_paramstructs
 * @brief Initialization information for a task pool instance.
 *
-* @paramfor  @ref taskpool_function_createsystemtaskpool @ref taskpool_function_create or @ref taskpool_function_createstatic
+* @paramfor  @ref taskpool_function_createsystemtaskpool @ref taskpool_function_create.
 *
-* Passed as an argument to @ref taskpool_function_create or @ref taskpool_function_createstatic.
+* Passed as an argument to @ref taskpool_function_create.
 *
 * @initializer{AwsIotTaskPoolInfo_t,AWS_IOT_TASKPOOL_INFO_INITIALIZER}
 */
@@ -97,7 +97,7 @@ typedef struct AwsIotTaskPoolInfo
     * threads at run time.
     */
 
-    uint32_t minThreads; /**< @brief Minimum number of threads in a task pool. These threads will be created when the task pool is first created with @ref taskpool_function_create or @ref taskpool_function_createstatic. */
+    uint32_t minThreads; /**< @brief Minimum number of threads in a task pool. These threads will be created when the task pool is first created with @ref taskpool_function_create. */
     uint32_t maxThreads; /**< @brief Maximum number of threads in a task pool. */
     uint32_t stackSize;  /**< @brief Stack size for every task pool thread. */
     uint32_t priority;   /**< @brief priority for every task pool thread. */
@@ -105,23 +105,6 @@ typedef struct AwsIotTaskPoolInfo
 } AwsIotTaskPoolInfo_t;
 
 /*------------------------- Task Pool handles structs --------------------------*/
-
-/**
-* @types{taskpool,Task Pool}
-*/
-
-/**
-* @ingroup taskpool_datatypes_types
-* @brief Task pool jobs cache.
-*
-* @warning This is a system-level data type that should not be modified.
-*
-*/
-typedef struct AwsIotTaskPoolCache
-{
-    IotListDouble_t freeList;      /**< @brief Cached jobs are treaded into a list. */
-    uint32_t        freeCount;     /**< @brief A counter for the jobs in the cache. */
-} AwsIotTaskPoolCache_t;
 
 /**
 * @ingroup taskpool_datatypes_types
@@ -133,18 +116,16 @@ typedef struct AwsIotTaskPoolCache
 */
 typedef struct AwsIotTaskPool
 {
-    IotQueue_t            dispatchQueue;    /**< @brief The queue for the job waiting to be executed. */
-    AwsIotTaskPoolCache_t jobsCache;        /**< @brief A cache to re-use jobs in order to limit memory allocations. */
-    uint32_t              minThreads;       /**< @brief The minimum number of threads for the thread pool. */
-    uint32_t              maxThreads;       /**< @brief The maximum number of threads for the thread pool. */
-    uint32_t              activeThreads;    /**< @brief The number of threads in the task pool at any given time. */
-    uint32_t              busyThreads;      /**< @brief The number of threads in the task pool busy at any given time. */
-    uint32_t              stackSize;        /**< @brief The stack size for all task pool threads. */
-    uint32_t              priority;         /**< @brief The priority for all task pool threads. */
-    AwsIotSemaphore_t     dispatchSignal;   /**< @brief The semaphore in which threads are waiting for incoming jobs. */
-    AwsIotSemaphore_t     startStopSignal;  /**< @brief The semaphore for threads to signal start and stop condition. */
-    AwsIotMutex_t         lock;             /**< @brief The lock to protect the engine data structure access. */
-    bool                  freeMemory;       /**< @brief A flag to differentiate the cases where the engine is dynamically or statically allocated. */
+    IotQueue_t        dispatchQueue;    /**< @brief The queue for the job waiting to be executed. */
+    uint32_t          minThreads;       /**< @brief The minimum number of threads for the thread pool. */
+    uint32_t          maxThreads;       /**< @brief The maximum number of threads for the thread pool. */
+    uint32_t          activeThreads;    /**< @brief The number of threads in the task pool at any given time. */
+    uint32_t          busyThreads;      /**< @brief The number of threads in the task pool busy at any given time. */
+    uint32_t          stackSize;        /**< @brief The stack size for all task pool threads. */
+    uint32_t          priority;         /**< @brief The priority for all task pool threads. */
+    AwsIotSemaphore_t dispatchSignal;   /**< @brief The semaphore in which threads are waiting for incoming jobs. */
+    AwsIotSemaphore_t startStopSignal;  /**< @brief The semaphore for threads to signal start and stop condition. */
+    AwsIotMutex_t     lock;             /**< @brief The lock to protect the engine data structure access. */
 } AwsIotTaskPool_t;
 
 /**
@@ -234,7 +215,6 @@ typedef enum AwsIotTaskPoolError
     * Functions that may return this value:
     * - @ref taskpool_function_createsystemtaskpool
     * - @ref taskpool_function_create
-    * - @ref taskpool_function_createstatic
     * - @ref taskpool_function_destroy
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_createjob
@@ -253,7 +233,6 @@ typedef enum AwsIotTaskPoolError
     * Functions that may return this value:
     * - @ref taskpool_function_createsystemtaskpool
     * - @ref taskpool_function_create
-    * - @ref taskpool_function_createstatic
     * - @ref taskpool_function_destroy
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_createjob
@@ -286,7 +265,6 @@ typedef enum AwsIotTaskPoolError
     * Functions that may return this value:
     * - @ref taskpool_function_createsystemtaskpool
     * - @ref taskpool_function_create
-    * - @ref taskpool_function_createstatic
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_createjob
     * - @ref taskpool_function_schedule

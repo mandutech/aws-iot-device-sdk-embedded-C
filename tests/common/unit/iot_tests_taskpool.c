@@ -94,13 +94,10 @@ TEST_TEAR_DOWN( Common_Unit_TaskPool )
 TEST_GROUP_RUNNER( Common_Unit_TaskPool )
 {
     RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_CreateDestroy );
-    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_CreateDestroyStatic );
     RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_CreateJobError );
     RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasksError );
-    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait );
-    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait );
-    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleOneThenWait );
-    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleAllThenWait );
+    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleOneThenWait );
+    RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleAllThenWait );
     RUN_TEST_CASE( Common_Unit_TaskPool, TaskPool_CancelTasks );
 }
 
@@ -110,7 +107,7 @@ TEST_GROUP_RUNNER( Common_Unit_TaskPool )
 * @brief Number of iterations for each test loop.
 */
 #ifndef _TASKPOOL_TEST_ITERATIONS
-#define _TASKPOOL_TEST_ITERATIONS ( 200 )
+#define _TASKPOOL_TEST_ITERATIONS ( 20 )
 #endif
 
 /**
@@ -171,7 +168,7 @@ static void CleanupDelay( )
 /**
 * @brief A callback that recycles its job.
 */
-static void ExecutionWithRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
+static void ExecutionWithDestroyCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
 {
     JobUserContext_t * pUserContext;
     AwsIotTaskPoolJobStatus_t status;
@@ -187,13 +184,13 @@ static void ExecutionWithRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPool
     pUserContext->counter++;
     AwsIotMutex_Unlock( &pUserContext->lock );
 
-    TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+    TEST_ASSERT( AwsIotTaskPool_DestroyJob( pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
 }
 
 /**
 * @brief A callback that does not recycle its job.
 */
-static void ExecutionWithoutRecycleCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
+static void ExecutionWithoutDestroyCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * pJob, void * context )
 {
     JobUserContext_t * pUserContext;
     AwsIotTaskPoolJobStatus_t status;
@@ -250,51 +247,22 @@ AwsIotTaskPoolInfo_t tpInfoIllegal[ ILLEGAL_INFOS ] = {
 TEST( Common_Unit_TaskPool, TaskPool_CreateDestroy )
 {
     uint32_t count;
-    AwsIotTaskPool_t * pTaskPool;
-
-    for ( count = 0; count < LEGAL_INFOS; ++count )
-    {
-        TEST_ASSERT( AwsIotTaskPool_Create( &tpInfoLegal[ count ], &pTaskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
-        TEST_ASSERT( pTaskPool != NULL );
-        TEST_ASSERT( AwsIotTaskPool_Destroy( pTaskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
-    }
-
-    for ( count = 0; count < ILLEGAL_INFOS; ++count )
-    {
-        TEST_ASSERT( AwsIotTaskPool_Create( &tpInfoIllegal[ count ], &pTaskPool ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-    }
-
-    TEST_ASSERT( AwsIotTaskPool_Create( &tpInfoLegal[ 0 ], NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-    TEST_ASSERT( AwsIotTaskPool_Create( NULL, &pTaskPool ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-    
-    CleanupDelay( );
-}
-
-/*-----------------------------------------------------------*/
-
-/**
-* @brief Test task pool static memory creation and destruction, with both legal and illegal information.
-*/
-TEST( Common_Unit_TaskPool, TaskPool_CreateDestroyStatic )
-{
-    uint32_t count;
     AwsIotTaskPool_t taskPool;
 
     for ( count = 0; count < LEGAL_INFOS; ++count )
     {
-        TEST_ASSERT( AwsIotTaskPool_CreateStatic( &tpInfoLegal[ count ], &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
+        TEST_ASSERT( AwsIotTaskPool_Create( &tpInfoLegal[ count ], &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
         TEST_ASSERT( AwsIotTaskPool_Destroy( &taskPool ) == AWS_IOT_TASKPOOL_SUCCESS );
     }
 
     for ( count = 0; count < ILLEGAL_INFOS; ++count )
     {
-        TEST_ASSERT( AwsIotTaskPool_CreateStatic( &tpInfoIllegal[ count ], &taskPool ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+        TEST_ASSERT( AwsIotTaskPool_Create( &tpInfoIllegal[ count ], &taskPool ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
     }
 
-    TEST_ASSERT( AwsIotTaskPool_CreateStatic( &tpInfoLegal[ 0 ], NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-
-    TEST_ASSERT( AwsIotTaskPool_CreateStatic( NULL, &taskPool ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-
+    TEST_ASSERT( AwsIotTaskPool_Create( &tpInfoLegal[ 0 ], NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+    TEST_ASSERT( AwsIotTaskPool_Create( NULL, &taskPool ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+    
     CleanupDelay( );
 }
 
@@ -305,37 +273,16 @@ TEST( Common_Unit_TaskPool, TaskPool_CreateDestroyStatic )
 */
 TEST( Common_Unit_TaskPool, TaskPool_CreateJobError )
 {
-    AwsIotTaskPool_t * pTaskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
 
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
-
-    TEST_ASSERT( pTaskPool != NULL );
-
-    /* Test static memory version. */
     {
         AwsIotTaskPoolJob_t job;
 
         /* NULL callback. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( pTaskPool, NULL, NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-        /* NULL engine handle. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( NULL, &ExecutionWithRecycleCb, NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+        TEST_ASSERT( AwsIotTaskPool_CreateJob( NULL, NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
         /* NULL job handle. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( pTaskPool, &ExecutionWithRecycleCb, NULL, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+        TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
     }
-    /* Test dynamic memory version. */
-    {
-        AwsIotTaskPoolJob_t * pJob = NULL;
-
-        /* NULL callback. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJob( pTaskPool, NULL, NULL, &pJob ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-        /* NULL engine handle. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJob( NULL, &ExecutionWithRecycleCb, NULL, &pJob ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-        /* NULL job handle. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJob( pTaskPool, &ExecutionWithRecycleCb, NULL, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
-    }
-
-    AwsIotTaskPool_Destroy( pTaskPool );
 
     CleanupDelay( );
 }
@@ -347,26 +294,23 @@ TEST( Common_Unit_TaskPool, TaskPool_CreateJobError )
 */
 TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasksError )
 {
-    AwsIotTaskPool_t * pTaskPool;
+    AwsIotTaskPool_t taskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
 
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
+    AwsIotTaskPool_Create( &tpInfo, &taskPool );
 
-    TEST_ASSERT( pTaskPool != NULL );
+    AwsIotTaskPoolJob_t job;
 
-    AwsIotTaskPoolJob_t * pJob = NULL;
-
-    TEST_ASSERT( AwsIotTaskPool_CreateJob( pTaskPool, &ExecutionWithRecycleCb, NULL, &pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
-    TEST_ASSERT( pJob != NULL );
+    TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
 
     /* NULL Task Pool Handle. */
-    TEST_ASSERT( AwsIotTaskPool_Schedule( NULL, pJob ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+    TEST_ASSERT( AwsIotTaskPool_Schedule( NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
     /* NULL Work item Handle. */
-    TEST_ASSERT( AwsIotTaskPool_Schedule( pTaskPool, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+    TEST_ASSERT( AwsIotTaskPool_Schedule( &taskPool, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
     /* Destroy the job, so we do not leak it. */
-    TEST_ASSERT( AwsIotTaskPool_DestroyJob( pTaskPool, pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+    TEST_ASSERT( AwsIotTaskPool_DestroyJob( &job ) == AWS_IOT_TASKPOOL_SUCCESS );
 
-    AwsIotTaskPool_Destroy( pTaskPool );
+    AwsIotTaskPool_Destroy( &taskPool );
 
     CleanupDelay( );
 }
@@ -376,14 +320,12 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasksError )
 /**
 * @brief Test scheduling a set of jobs: static allocation, sequential execution.
 */
-TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait )
+TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleOneThenWait )
 {
-    AwsIotTaskPool_t * pTaskPool;
+    AwsIotTaskPool_t taskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
 
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
-
-    TEST_ASSERT( pTaskPool != NULL );
+    AwsIotTaskPool_Create( &tpInfo, &taskPool );
 
     /* Statically allocated job, schedule one, then wait. */
     {
@@ -396,11 +338,11 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait )
         TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
 
         /* Shedule the job NOT to be recycle in the callback, since the buffer is statically allocated. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( pTaskPool, &ExecutionWithoutRecycleCb, &userContext, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
+        TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithoutDestroyCb, &userContext, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
 
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
-            AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, &job );
+            AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( &taskPool, &job );
 
             switch ( errorSchedule )
             {
@@ -416,7 +358,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait )
                 TEST_ASSERT( false );
             }
 
-            AwsIotTaskPoolError_t errorWait =  AwsIotTaskPool_Wait( pTaskPool, &job );
+            AwsIotTaskPoolError_t errorWait =  AwsIotTaskPool_Wait( &taskPool, &job );
 
             switch ( errorWait )
             {
@@ -435,7 +377,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait )
             TEST_ASSERT( userContext.counter == scheduled );
         }
 
-        TEST_ASSERT( AwsIotTaskPool_DestroyJob( pTaskPool, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
+        TEST_ASSERT( AwsIotTaskPool_DestroyJob( &job ) == AWS_IOT_TASKPOOL_SUCCESS );
 
         /* Since jobs were build from a static buffer and scheduled one-by-one, we
         * should have received all callbacks.
@@ -446,7 +388,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait )
         AwsIotMutex_Destroy( &userContext.lock );
     }
 
-    AwsIotTaskPool_Destroy( pTaskPool );
+    AwsIotTaskPool_Destroy( &taskPool );
 
     CleanupDelay( );
 }
@@ -456,14 +398,12 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleOneThenWait )
 /**
 * @brief Test scheduling a set of jobs: static allocation, bulk execution.
 */
-TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait )
+TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleAllThenWait )
 {
-    AwsIotTaskPool_t * pTaskPool;
+    AwsIotTaskPool_t taskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
 
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
-
-    TEST_ASSERT( pTaskPool != NULL );
+    AwsIotTaskPool_Create( &tpInfo, &taskPool );
 
     /* Statically allocated jobs, schedule all, then wait all. */
     {
@@ -478,9 +418,9 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait )
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
             /* Shedule the job NOT to be recycle in the callback, since the buffer is statically allocated. */
-            TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( pTaskPool, &ExecutionWithoutRecycleCb, &userContext, &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
+            TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithoutDestroyCb, &userContext, &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
 
-            AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, &tpJobs[ count ] );
+            AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( &taskPool, &tpJobs[ count ] );
 
             switch ( errorSchedule )
             {
@@ -498,7 +438,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait )
 
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
-            AwsIotTaskPoolError_t errorWait = AwsIotTaskPool_Wait( pTaskPool, &tpJobs[ count ] );
+            AwsIotTaskPoolError_t errorWait = AwsIotTaskPool_Wait( &taskPool, &tpJobs[ count ] );
 
             switch ( errorWait )
             {
@@ -519,206 +459,14 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_StaticScheduleAllThenWait )
 
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
-            TEST_ASSERT( AwsIotTaskPool_DestroyJob( pTaskPool, &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
+            TEST_ASSERT( AwsIotTaskPool_DestroyJob( &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
         }
 
         /* Destroy user context. */
         AwsIotMutex_Destroy( &userContext.lock );
     }
     
-    AwsIotTaskPool_Destroy( pTaskPool );
-
-    CleanupDelay( );
-}
-
-/*-----------------------------------------------------------*/
-
-/**
-* @brief Test scheduling a set of jobs: dynamic allocation, sequential execution.
-*/
-TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleOneThenWait )
-{
-    AwsIotTaskPool_t * pTaskPool;
-    AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
-
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
-
-    TEST_ASSERT( pTaskPool != NULL );
-
-    /*  Dynamically allocated job, schedule one, then wait. */
-    {
-        uint32_t count;
-        uint32_t scheduled = 0;
-        JobUserContext_t userContext = { 0 };
-
-        /* Initialize user context. */
-        TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
-
-        for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
-        {
-            AwsIotTaskPoolJob_t * pJob = NULL;
-
-            /* Shedule the job to be recycle in the callback. */
-            AwsIotTaskPoolError_t errorMake = AwsIotTaskPool_CreateJob( pTaskPool, &ExecutionWithRecycleCb, &userContext, &pJob );
-
-            switch ( errorMake )
-            {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                break;
-            case AWS_IOT_TASKPOOL_NO_MEMORY:
-                /* In a case where there would be many iterations, it is OK to be out of memory. */
-                continue;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
-            }
-
-            TEST_ASSERT( pJob != NULL );
-
-            AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, pJob );
-
-            switch ( errorSchedule )
-            {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                ++scheduled;
-                break;
-            case AWS_IOT_TASKPOOL_NO_MEMORY:
-                /* With dynamic memory allocation, it is OK to be out of memory. */
-                AwsIotTaskPool_RecycleJob( pTaskPool, pJob );
-                continue;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-            case AWS_IOT_TASKPOOL_ILLEGAL_OPERATION:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
-            }
-
-            AwsIotTaskPoolError_t errorWait = AwsIotTaskPool_Wait( pTaskPool, pJob );
-
-            switch ( errorWait )
-            {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                break;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-            case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:
-            case AWS_IOT_TASKPOOL_TIMEDOUT:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
-            }
-
-            /* Ensure callback actually executed. */
-            TEST_ASSERT( userContext.counter == scheduled );
-        }
-
-        /* Destroy user context. */
-        AwsIotMutex_Destroy( &userContext.lock );
-    }
-
-    AwsIotTaskPool_Destroy( pTaskPool );
-
-    CleanupDelay( );
-}
-
-/*-----------------------------------------------------------*/
-
-/**
-* @brief Test scheduling a set of jobs: dynamic allocation, bulk execution.
-*/
-TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleAllThenWait )
-{
-    AwsIotTaskPool_t * pTaskPool;
-    AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
-
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
-
-    TEST_ASSERT( pTaskPool != NULL );
-    
-    /* Dynamically allocated job, schedule all, then wait all. */
-    {
-        uint32_t count;
-        uint32_t scheduled = 0;
-        JobUserContext_t userContext = { 0 };
-        AwsIotTaskPoolJob_t * tpJobs[ _TASKPOOL_TEST_ITERATIONS ] = { 0 };
-
-        /* Initialize user context. */
-        TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
-        
-        for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
-        {
-            AwsIotTaskPoolError_t errorMake = AwsIotTaskPool_CreateJob( pTaskPool, &ExecutionWithRecycleCb, &userContext, &tpJobs[ count ] );
-
-            switch ( errorMake )
-            {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                break;
-            case AWS_IOT_TASKPOOL_NO_MEMORY:
-                /* In a case where there would be many iterations, it is OK to be out of memory. */
-                continue;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
-            }
-
-            TEST_ASSERT( tpJobs[ count ] != NULL );
-
-            AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, tpJobs[ count ] );
-
-            switch ( errorSchedule )
-            {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                ++scheduled;
-                break;
-            case AWS_IOT_TASKPOOL_NO_MEMORY:
-                /* In a case where there would be many iterations, it is OK to be out of memory. */
-                AwsIotTaskPool_RecycleJob( pTaskPool, tpJobs[ count ] );
-                continue;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-            case AWS_IOT_TASKPOOL_ILLEGAL_OPERATION:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
-            }
-        }
-
-        for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
-        {
-            if ( tpJobs[ count ] == NULL )
-            {
-                continue;
-            }
-
-            AwsIotTaskPoolError_t errorWait = AwsIotTaskPool_Wait( pTaskPool, tpJobs[ count ] );
-
-            switch ( errorWait )
-            {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                break;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-            case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:
-            case AWS_IOT_TASKPOOL_TIMEDOUT:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
-            }
-        }
-
-        /* Wait until callback is executed. */
-        TEST_ASSERT_TRUE( userContext.counter == scheduled );
-
-        /* Destroy user context. */
-        AwsIotMutex_Destroy( &userContext.lock );
-    }
-
-    AwsIotTaskPool_Destroy( pTaskPool );
+    AwsIotTaskPool_Destroy( &taskPool );
 
     CleanupDelay( );
 }
@@ -731,17 +479,15 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_DynamicScheduleAllThenWait )
 TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
 {
     uint32_t count;
-    AwsIotTaskPool_t * pTaskPool;
+    AwsIotTaskPool_t taskPool;
     AwsIotTaskPoolInfo_t tpInfo = { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY };
     uint32_t canceled = 0;
     uint32_t scheduled = 0;
 
-    AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
-
-    TEST_ASSERT( pTaskPool != NULL );
+    AwsIotTaskPool_Create( &tpInfo, &taskPool );
 
     JobUserContext_t userContext = { 0 };
-    AwsIotTaskPoolJob_t * tpJobs[ _TASKPOOL_TEST_ITERATIONS ] = { 0 };
+    AwsIotTaskPoolJob_t jobs[ _TASKPOOL_TEST_ITERATIONS ] = { 0 };
 
     /* Initialize user context. */
     TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
@@ -749,7 +495,7 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
     /* Create and schedule loop. */
     for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
     {
-        AwsIotTaskPoolError_t errorMake = AwsIotTaskPool_CreateJob( pTaskPool, &ExecutionWithoutRecycleCb, &userContext, &tpJobs[ count ] );
+        AwsIotTaskPoolError_t errorMake = AwsIotTaskPool_CreateJob( &ExecutionWithoutDestroyCb, &userContext, &jobs[ count ] );
 
         switch ( errorMake )
         {
@@ -764,9 +510,7 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
             TEST_ASSERT( false );
         }
 
-        TEST_ASSERT( tpJobs[ count ] != NULL );
-
-        AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, tpJobs[ count ] );
+        AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( &taskPool, &jobs[ count ] );
 
         switch ( errorSchedule )
         {
@@ -789,13 +533,8 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
         AwsIotTaskPoolError_t error;
         AwsIotTaskPoolJobStatus_t statusAtCancellation = AWS_IOT_TASKPOOL_STATUS_READY;
         AwsIotTaskPoolJobStatus_t statusAfterCancellation = AWS_IOT_TASKPOOL_STATUS_READY;
-
-        if ( tpJobs[ count ] == NULL )
-        {
-            continue;
-        }
-
-        error = AwsIotTaskPool_TryCancel( pTaskPool, tpJobs[ count ], &statusAtCancellation );
+        
+        error = AwsIotTaskPool_TryCancel( &taskPool, &jobs[ count ], &statusAtCancellation );
 
         switch ( error )
         {
@@ -804,7 +543,7 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
             canceled++;
             TEST_ASSERT( ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_READY ) || ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_SCHEDULED ) || ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_CANCELED ) );
 
-            TEST_ASSERT( AwsIotTaskPool_GetStatus( tpJobs[ count ], &statusAfterCancellation ) == AWS_IOT_TASKPOOL_SUCCESS );
+            TEST_ASSERT( AwsIotTaskPool_GetStatus( &jobs[ count ], &statusAfterCancellation ) == AWS_IOT_TASKPOOL_SUCCESS );
             TEST_ASSERT( statusAfterCancellation == AWS_IOT_TASKPOOL_STATUS_CANCELED );
         }
         break;
@@ -812,7 +551,7 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
         {
             TEST_ASSERT( ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_EXECUTING ) || ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_COMPLETED ) );
 
-            TEST_ASSERT( AwsIotTaskPool_GetStatus( tpJobs[ count ], &statusAfterCancellation ) == AWS_IOT_TASKPOOL_SUCCESS );
+            TEST_ASSERT( AwsIotTaskPool_GetStatus( &jobs[ count ], &statusAfterCancellation ) == AWS_IOT_TASKPOOL_SUCCESS );
             TEST_ASSERT( ( statusAfterCancellation == AWS_IOT_TASKPOOL_STATUS_EXECUTING ) || ( statusAfterCancellation == AWS_IOT_TASKPOOL_STATUS_COMPLETED ) );
         }
         break;
@@ -834,16 +573,15 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
 
     TEST_ASSERT( ( scheduled - canceled ) == userContext.counter );
 
-
     for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
     {
-        TEST_ASSERT( AwsIotTaskPool_RecycleJob( pTaskPool, tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
+        TEST_ASSERT( AwsIotTaskPool_DestroyJob( &jobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
     }
 
     /* Destroy user context. */
     AwsIotMutex_Destroy( &userContext.lock );
 
-    AwsIotTaskPool_Destroy( pTaskPool );
+    AwsIotTaskPool_Destroy( &taskPool );
 
     CleanupDelay( );
 }
