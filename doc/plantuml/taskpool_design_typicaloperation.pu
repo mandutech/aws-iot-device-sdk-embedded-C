@@ -5,65 +5,61 @@ autonumber
 
 participant "Application" as app
 participant "User Callback" as callback
-participant "Work Item" as workitem
+participant "Job" as job
 
 participant "Task Pool public API" as TP
 participant "Dispatch queue" as queue
 participant "Worker Threads" as workers
-participant "Task Pool Cache" as cache
 
 box "Task Pool" #LightBlue
     participant TP
     participant queue
     participant workers
-    participant cache
 end box
 
 == Create Task Pool ==
 
-app -[#blue]> TP: AwsIotTaskPool_Create[Static]: create a Task 
+activate app
+
+app -[#blue]> TP: AwsIotTaskPool_Create: create a Task 
 TP -> queue: Initialize dispatch queue
 activate queue
 TP -> workers: Create minimum number of worker threads
 activate workers
-TP -> cache: Initialize work items cache
-activate cache
 TP --[#blue]> app
 activate TP
-workers -> workers: Wait on incoming work items
+workers -> workers: Wait on incoming jobs
 
 == Use Task Pool ==
 
-loop Application loop: Create and Schedule work items
-	app -[#blue]> TP: AwsIotTaskPool_MakeWorkItem: create a work item
-	TP -> cache: fetch or create work item
+loop Application loop: Create and schedule jobs
+	app -[#blue]> TP: AwsIotTaskPool_CreateJob: create a job
 	TP --[#blue]> app
-	activate workitem
-	note left: work item status: //ready//
+	activate job
+	note left: job status: //ready//
 	
-	app -[#blue]> TP: AwsIotTaskPool_Schedule: schedule a work item
-	TP -> queue: Queue work item
+	app -[#blue]> TP: AwsIotTaskPool_Schedule: schedule a job
+	TP -> queue: Queue job
 	TP -> TP: Grow pool up to maximum threads, if all threads are busy
-	TP -> workers: Signal incoming work item
+	TP -> workers: Signal incoming job
 	TP --[#blue]> app
-	note left: work item status: //scheduled//
+	note left: job status: //scheduled//
 	
-	loop Outer dispatch loop: Wait on incoming work items
-		workers -> queue: Dequeue next work item
-		loop Inner dispatch loop: Execute any queue work items in order
-			workers -[#green]> workitem: Invoke user callback
-			note left: work item status: //executing//
-			workitem -[#green]> callback: Invoke
+	loop Outer dispatch loop: Wait on incoming jobs
+		workers -> queue: Dequeue next job
+		loop Inner dispatch loop: Execute any queue jobs in order
+			workers -[#green]> job: Invoke user callback
+			note left: job status: //executing//
+			job -[#green]> callback: Invoke
 			activate callback
-			callback -[#blue]> TP: AwsIotTaskPool_RecycleWorkItem: recycle or destroy work item
-			TP -> cache: recycle or destroy work item
+			callback -[#blue]> TP: AwsIotTaskPool_DestroyJob: destroy job
 			TP --[#blue]> callback
-			note left: work item status: //completed//
-			deactivate workitem
+			note left: job status: //completed//
+			deactivate job
 			deactivate callback
-			workers -> workers: Move to next work item
+			workers -> workers: Move to next job
 		end
-		workers -> workers: Wait on incoming work items
+		workers -> workers: Wait on incoming jobs
 	end
 	
 end
@@ -71,11 +67,9 @@ end
 == Destroy Task Pool ==
 
     app -[#blue]> TP: AwsIotTaskPool_Destroy: destroy the task pool
-	TP -> cache: Destroy all work items in the cache
-	deactivate cache
 	TP -> workers: Shutdown worker threads
 	deactivate workers
-	TP -> queue: Destroy all work items in the dispatch queue
+	TP -> queue: Destroy all jobs in the dispatch queue
 	deactivate queue
     TP --[#blue]> app
 	deactivate TP
