@@ -184,8 +184,7 @@ typedef struct AwsIotTaskPoolJob
 #define AWS_IOT_TASKPOOL_INFO_INITIALIZER_LARGE      { .minThreads = 2, .maxThreads = 3, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY }  /**< @brief Initializer for a large #AwsIotTaskPoolInfo_t. */
 #define AWS_IOT_TASKPOOL_INFO_INITIALIZER_XLARGE     { .minThreads = 2, .maxThreads = 4, .stackSize = AWS_IOT_TASKPOOL_THREADS_STACK_SIZE, .priority = AWS_IOT_TASKPOOL_THREADS_PRIORITY }  /**< @brief Initializer for a very large #AwsIotTaskPoolInfo_t. */
 #define AWS_IOT_TASKPOOL_INFO_INITIALIZER            AWS_IOT_TASKPOOL_INFO_INITIALIZER_MEDIUM                                                                                               /**< @brief Initializer for a typical #AwsIotTaskPoolInfo_t. */
-#define AWS_IOT_TASKPOOL_HANDLE_INITIALIZER          { 0 }                                                                                                                                  /**< @brief Initializer for a #AwsIotTaskPool_t *. */
-#define AWS_IOT_TASKPOOL_WORKITEM_HANDLE_INITIALIZER { 0 }                                                                                                                                  /**< @brief Initializer for a #AwsIotTaskPoolJob_t. */
+#define AWS_IOT_TASKPOOL_INITIALIZER                 { 0 }                                                                                                                                  /**< @brief Initializer for a #AwsIotTaskPoolJob_t. */
 /* @[define_taskpool_initializers] */
 
 /**
@@ -326,43 +325,43 @@ typedef enum AwsIotTaskPoolError
 
 /**
 * @ingroup taskpool_datatypes_enums
-* @brief Status codes of [Task Pool Work Item](@ref AwsIotTaskPoolJob_t).
+* @brief Status codes of [Task Pool Job](@ref AwsIotTaskPoolJob_t).
 *
 */
 typedef enum AwsIotTaskPoolJobStatus
 {
     /**
-    * @brief Work item is ready to be scheduled.
+    * @brief Job is ready to be scheduled.
     *
     */
     AWS_IOT_TASKPOOL_STATUS_READY = 0,
 
     /**
-    * @brief Work item has been queued for execution.
+    * @brief Job has been queued for execution.
     *
     */
     AWS_IOT_TASKPOOL_STATUS_SCHEDULED,
 
     /**
-    * @brief Work item is executing.
+    * @brief Job is executing.
     *
     */
     AWS_IOT_TASKPOOL_STATUS_EXECUTING,
 
     /**
-    * @brief Work item execution has completed.
+    * @brief Job execution has completed.
     *
     */
     AWS_IOT_TASKPOOL_STATUS_COMPLETED,
 
     /**
-    * @brief Work item has been canceled before it was executed.
+    * @brief Job has been canceled before it was executed.
     *
     */
     AWS_IOT_TASKPOOL_STATUS_CANCELED,
 
     /**
-    * @brief Work item status is undefined.
+    * @brief Job status is undefined.
     *
     */
     AWS_IOT_TASKPOOL_STATUS_UNDEFINED,
