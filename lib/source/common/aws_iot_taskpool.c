@@ -110,7 +110,7 @@ AwsIotTaskPool_t _IotSystemTaskPool = { 0 };
 * @param[in] pJob The job to destroy.
 *
 */
-static void _destroyWorkItem( AwsIotTaskPoolJob_t * const pJob );
+static void _destroyJob( AwsIotTaskPoolJob_t * const pJob );
 
 /* -------------- The worker thread procedure for a task pool thread -------------- */
 
@@ -167,7 +167,7 @@ static bool _shutdownInProgress( const AwsIotTaskPool_t * const pTaskPool );
 * @param[in] pTaskPool The task pool to destroy.
 *
 */
-static void _signalShutdown( AwsIotTaskPool_t * const pTaskPool );
+static void _signalShutdown( AwsIotTaskPool_t * const pTaskPool, uint32_t threads );
 /** @endcond */
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -203,8 +203,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Create( const AwsIotTaskPoolInfo_t * const 
 
 AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
 {
-    uint32_t count;
     AwsIotTaskPoolError_t error = AWS_IOT_TASKPOOL_SUCCESS;
+    uint32_t count;
 
     /* Track how many threads the task pool owns. */
     uint32_t activeThreads;
@@ -222,15 +222,14 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
         _TASKPOOL_ENTER_CRITICAL_SECTION;
         {
             IotLink_t * pItemLink;
-            bool executing = false;
 
             /* Record how many active threads in the task pool. */
             activeThreads = pTaskPool->activeThreads;
 
-            /* Destroying a Task pool happens in four (4) stages: first we lock the task pool mutex for safety, and then (1) we set the exit condition and
-             * (2) wake up all active worker threads. Worker threads will observe the exit condition and bail out without trying to pick up any further work. 
-             * We will then release the mutex and (3) wait for all worker threads to signal exit, before (4) destroying all task pool data structures and 
-             * release the associated memory.
+            /* Destroying a Task pool happens in four (4) stages: first we lock the task pool mutex for safety, and then (1) we clear the work queue. 
+             * Then we (2)w e set the exit condition and wake up all active worker threads. Worker threads will observe the exit condition and bail out 
+             * without trying to pick up any further work.  We will then release the mutex and (3) wait for all worker threads to signal exit, 
+             * before (4) destroying all task pool data structures and release the associated memory.
              */
 
              /* (1) Clear the job queue. */
@@ -244,19 +243,13 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
                 {
                     AwsIotTaskPoolJob_t * pJob = IotLink_Container( AwsIotTaskPoolJob_t, pItemLink, link );
 
-                    _destroyWorkItem( pJob );
+                    _destroyJob( pJob );
                 }
 
             } while ( pItemLink );
 
             /* (2) Set the exit condition. */
-            _signalShutdown( pTaskPool );
-
-            /* (3) Broadcast to all active threads to wake-up. Active threads do check the exit condition right after wakein up. */
-            for ( count = 0; count < activeThreads; ++count )
-            {
-                AwsIotSemaphore_Post( &pTaskPool->dispatchSignal );
-            }
+            _signalShutdown( pTaskPool, activeThreads );
         }
         _TASKPOOL_EXIT_CRITICAL_SECTION;
 
@@ -266,6 +259,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool )
             AwsIotSemaphore_Wait( &pTaskPool->startStopSignal );
         }
 
+        /* Make sure sure all threads have actually exited. */
         while ( pTaskPool->activeThreads != 0 )
         {
         }
@@ -346,7 +340,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob( const IotTaskPoolRoutine_t userC
         pJob->link.pPrevious = NULL;
         pJob->userCallback = userCallback;
         pJob->pUserContext = pUserContext;
-        pJob->statusAndFlags = AWS_IOT_TASKPOOL_STATUS_READY;
+        pJob->status = AWS_IOT_TASKPOOL_STATUS_READY;
 
         if ( AwsIotSemaphore_Create( &pJob->waitHandle, 0, 1 ) == false )
         {
@@ -379,7 +373,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
         }
         else
         {
-            _destroyWorkItem( pJob );
+            _destroyJob( pJob );
         }
     }
 
@@ -427,8 +421,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPoo
                 IotQueue_Enqueue( &pTaskPool->dispatchQueue, &pJob->link );
 
                 /* Update the job status to 'scheduled'. */
-                pJob->statusAndFlags &= ~AWS_IOT_TASKPOOL_STATUS_MASK;
-                pJob->statusAndFlags |= AWS_IOT_TASKPOOL_STATUS_SCHEDULED;
+                pJob->status = AWS_IOT_TASKPOOL_STATUS_SCHEDULED;
 
                 /* Signal a worker to pick up the job. */
                 AwsIotSemaphore_Post( &pTaskPool->dispatchSignal );
@@ -506,7 +499,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TimedWait( const AwsIotTaskPool_t * pTaskPo
             {
                 AwsIotTaskPoolJobStatus_t currentStatus;
 
-                currentStatus = pJob->statusAndFlags & AWS_IOT_TASKPOOL_STATUS_MASK;
+                currentStatus = pJob->status;
 
                 /* Only jobs that are schedulable, scheduled, or executing can be waited on. */
                 switch ( currentStatus )
@@ -514,7 +507,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TimedWait( const AwsIotTaskPool_t * pTaskPo
                 case AWS_IOT_TASKPOOL_STATUS_READY:
                 case AWS_IOT_TASKPOOL_STATUS_SCHEDULED:
                 case AWS_IOT_TASKPOOL_STATUS_EXECUTING:
-                    ( (AwsIotTaskPoolJob_t * )pJob )->statusAndFlags |= AWS_IOT_TASK_POOL_INTERNAL_MARKED_FOR_WAIT; /* The wait flag will prevent early recycling of the job. */
                     waitable = true;
                     break;
 
@@ -534,9 +526,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TimedWait( const AwsIotTaskPool_t * pTaskPo
     if ( waitable )
     {
         bool res = AwsIotSemaphore_TimedWait( &pJob->waitHandle, timeoutMs );
-
-        /* Clear the wait flag. */
-        ( ( AwsIotTaskPoolJob_t * )pJob )->statusAndFlags &= ~AWS_IOT_TASK_POOL_INTERNAL_MARKED_FOR_WAIT;
 
         /* Return the appropriate error for the failure case. */
         if ( res == false )
@@ -560,7 +549,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_GetStatus( const AwsIotTaskPoolJob_t * pJob
     }
     else
     {
-        *pStatus = ( ( AwsIotTaskPoolJob_t * )pJob )->statusAndFlags & AWS_IOT_TASKPOOL_STATUS_MASK;
+        *pStatus = pJob->status;
     }
 
     return error;
@@ -605,7 +594,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TryCancel( const AwsIotTaskPool_t * pTaskPo
                     bool cancelable = false;
 
                     /* Register the current status. */
-                    AwsIotTaskPoolJobStatus_t currentStatus = pJob->statusAndFlags & AWS_IOT_TASKPOOL_STATUS_MASK;
+                    AwsIotTaskPoolJobStatus_t currentStatus = pJob->status;
 
                     switch ( currentStatus )
                     {
@@ -634,8 +623,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TryCancel( const AwsIotTaskPool_t * pTaskPo
                     if ( cancelable )
                     {
                         /* Update the status of the job. */
-                        ( ( AwsIotTaskPoolJob_t * )pJob )->statusAndFlags &= ~AWS_IOT_TASKPOOL_STATUS_MASK;
-                        ( ( AwsIotTaskPoolJob_t * )pJob )->statusAndFlags |= AWS_IOT_TASKPOOL_STATUS_CANCELED;
+                        ( ( AwsIotTaskPoolJob_t * )pJob )->status = AWS_IOT_TASKPOOL_STATUS_CANCELED;
 
                         /* If the job is cancelable and still in the dispatch queue, then unlink it and signal any waiting threads. */
                         if ( IotLink_IsLinked( &pJob->link ) )
@@ -650,7 +638,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TryCancel( const AwsIotTaskPool_t * pTaskPo
                     }
                     else
                     {
-                        error = AWS_IOT_TASKPOOL_FAILED;
+                        error = AWS_IOT_TASKPOOL_CANCEL_FAILED;
                     }
                 }
             }
@@ -734,7 +722,7 @@ static AwsIotTaskPoolError_t _createTaskPool( const AwsIotTaskPoolInfo_t * const
             if ( _TASKPOOL_FAILED( error ) )
             {
                 /* Set the exit condition for the newly created threads. */
-                _signalShutdown( pTaskPool );
+                _signalShutdown( pTaskPool, threadsCreated );
 
                 /* Signal all threads to exit. */
                 for ( count = 0; count < threadsCreated; ++count )
@@ -900,8 +888,7 @@ static void _taskPoolWorker( void * pUserContext )
                 pJob = IotLink_Container( AwsIotTaskPoolJob_t, pFirst, link );
 
                 /* Update status to 'executing'. */
-                pJob->statusAndFlags &= ~AWS_IOT_TASKPOOL_STATUS_MASK;
-                pJob->statusAndFlags |= AWS_IOT_TASKPOOL_STATUS_EXECUTING;
+                pJob->status = AWS_IOT_TASKPOOL_STATUS_EXECUTING;
 				
                 /* Check if there is another job in the queue, and if there is one, signal the task pool. */
                 pNext = IotQueue_Peek( &pTaskPool->dispatchQueue );
@@ -931,8 +918,7 @@ static void _taskPoolWorker( void * pUserContext )
             _TASKPOOL_ENTER_CRITICAL_SECTION;
             {
                 /* Mark the job as 'completed', and signal completion on the associated semaphore. */
-                pJob->statusAndFlags &= ~AWS_IOT_TASKPOOL_STATUS_MASK;
-                pJob->statusAndFlags |= AWS_IOT_TASKPOOL_STATUS_COMPLETED;
+                pJob->status = AWS_IOT_TASKPOOL_STATUS_COMPLETED;
 
                 /* Signal the completion wait handle. */
                 AwsIotSemaphore_Post( &pJob->waitHandle );
@@ -961,8 +947,7 @@ static void _taskPoolWorker( void * pUserContext )
                     }
                 }
 
-                pJob->statusAndFlags &= ~AWS_IOT_TASKPOOL_STATUS_MASK;
-                pJob->statusAndFlags |= AWS_IOT_TASKPOOL_STATUS_EXECUTING;
+                pJob->status = AWS_IOT_TASKPOOL_STATUS_EXECUTING;
             }
             _TASKPOOL_EXIT_CRITICAL_SECTION;
         }
@@ -982,10 +967,8 @@ static void _taskPoolWorker( void * pUserContext )
 
 /* ---------------------------------------------------------------------------------------------- */
 
-static void _destroyWorkItem( AwsIotTaskPoolJob_t * const pJob )
+static void _destroyJob( AwsIotTaskPoolJob_t * const pJob )
 {
-    /* Cannot destroy statically allocated jobs, but can de-allocated the wait handle. */
-
     /* Dispose of the wait handle first. */
     AwsIotSemaphore_Destroy( &pJob->waitHandle );
 }
@@ -997,9 +980,16 @@ static bool _shutdownInProgress( const AwsIotTaskPool_t * const pTaskPool )
     return ( pTaskPool->maxThreads == 0 );
 }
 
-static void _signalShutdown( AwsIotTaskPool_t * const pTaskPool )
+static void _signalShutdown( AwsIotTaskPool_t * const pTaskPool, uint32_t threads )
 {
+    /* Set the exit condition. */
     pTaskPool->maxThreads = 0;
+
+    /* Broadcast to all active threads to wake-up. Active threads do check the exit condition right after wakein up. */
+    for ( uint32_t count = 0; count < threads; ++count )
+    {
+        AwsIotSemaphore_Post( &pTaskPool->dispatchSignal );
+    }
 }
 
 /** @endcond */

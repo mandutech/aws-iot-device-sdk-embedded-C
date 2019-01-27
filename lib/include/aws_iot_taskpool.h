@@ -24,7 +24,6 @@
 * @brief User-facing functions of the Task Pool library.
 */
 
-
 #ifndef _AWS_IOT_TASKPOOL_H_
 #define _AWS_IOT_TASKPOOL_H_
 
@@ -44,7 +43,8 @@
 /*------------------------- TASKPOOL defined constants --------------------------*/
 
 /**
-* @brief Allows the use of the handle to the system task pool.
+* @brief Retrives the handle to one and only system task pool.
+* The system-level task pool is used by all libraries, and can also be used by the user application.
 *
 * @warning The task pool handle is not valid unless @ref taskpool_function_createsystemtaskpool is 
 * called before the handle is used.
@@ -83,16 +83,17 @@
 */
 
 /**
-* @brief Initialization function for a statically allocated System Task Pool of the Task Pool library.
+* @brief Initialization function for one instance of the System Task Pool of the Task Pool library.
 *
 * This function should be called once by the application to initialize the only instance of the system task pool. 
 * An application should initialize the system task pool early in the boot sequence, before any library 
-* that uses the system task pool has a chance to access it, or before any application code posts to the system task pool.
-* Early initailization it typically easy to accomplish by creating the system task pool before the scheduler is started.
+* that uses the system task pool has a chance to use it, or before any application code posts to the system task pool.
+* Early initialization it typically easy to accomplish by creating the system task pool before the scheduler is started.
 *
 * This function does not allocate memory to hold the Task Pool data structures and state, but it 
 * may allocate memory to hold the dependent entities and data structures, e.g. the threads of the task
-* pool. TThe system task pool handle is recoverable for later use by calling (@ref taskpool_function_getsystemtaskpool).
+* pool. The system task pool handle is recoverable for later use by calling (@ref taskpool_function_getsystemtaskpool) or
+* the shortcut @ref AWS_IOT_TASKPOOL_SYSTEM_TASKPOOL.
 *
 * @param[in] pInfo A pointer to the Task Pool initialization data.
 * 
@@ -100,10 +101,9 @@
 * - #AWS_IOT_TASKPOOL_SUCCESS
 * - #AWS_IOT_TASKPOOL_BAD_PARAMETER
 * - #AWS_IOT_TASKPOOL_NO_MEMORY
-* - AWS_IOT_TASKPOOL_ILLEGAL_OPERATION
 *
 * @warning This function should be called only once. Calling this function more that once will result in 
-* @ref AWS_IOT_TASKPOOL_ILLEGAL_OPERATION error.
+* undefined behavior.
 *
 */
 /* @[declare_taskpool_createsystemtaskpool] */
@@ -111,11 +111,15 @@ AwsIotTaskPoolError_t AwsIotTaskPool_CreateSystemTaskPool( const AwsIotTaskPoolI
 /* @[declare_taskpool_createsystemtaskpool] */
 
 /**
-* @brief Initialization function for an instance of a global system Task Pool of the Task Pool library.
+* @brief Retrieves the one and only instance of a system Task Pool of the Task Pool library.
 *
 * This function retrieves the sytem task pool created with (@ref taskpool_function_createsystemtaskpool).
 *
-* @return The system task pool handle or NULL, if the system task pool was not previously created.
+* @return The system task pool handle.
+*
+* @warning This function should be called after creating the system task pool with @ref AwsIotTaskPool_CreateSystemTaskPool.
+* Calling this function before creating the system task pool may return a pointer to an uninitialized task pool, NULL, or otherwise
+* fail with undefined behaviour.
 *
 */
 /* @[declare_taskpool_getsystemtaskpool] */
@@ -123,26 +127,21 @@ AwsIotTaskPool_t * AwsIotTaskPool_GetSystemTaskPool( );
 /* @[declare_taskpool_getsystemtaskpool] */
 
 /**
-* @brief Initialization function for an instance of a Task Pool of the Task Pool library.
+* @brief Initialization function for one instance of a Task Pool of the Task Pool library.
 *
 * This function should be called by the user to initialiaze one instance of a Task
-* Pool. The Task Pool instance will be created in the storage pointed to by the `pTaskPool` 
-* parameter. It creates the minimum number of threads
-* requested by the user through an instance of the #AwsIotTaskPoolInfo_t type specified with
-* the `pInfo` parameter and returns a handle to the initialized Task Pool in the `pTaskPool`
-* parameter.
-*
+* Pool. The Task Pool instance will be created around the storage pointed to by the `pTaskPool` 
+* parameter. This function will create the minimum number of threads requested by the user 
+* through an instance of the #AwsIotTaskPoolInfo_t type specified with
+* the `pInfo` parameter.
 * This function does not allocate memory to hold the Task Pool data structures and state, but it 
 * may allocates memory to hold the dependent data structures, e.g. the threads of the task
 * pool.
 *
 * @param[in] pInfo A pointer to the Task Pool initialization data.
-* the Task Pool state. This buffer must remain valid and in-scope until
-* [the task pool is destroyed.](@ref taskpool_function_destroy).
-* @param[in,out] pTaskPool A pointer to the storage to be initialized as a task pool to be used
-* with all other Task Pool library functions. The pointer will hold a valid handle only if
-* (@ref taskpool_function_create) completes succesfully. In case of error, the value pointed to by
-* `pTaskPool` is undefined.
+* @param[in,out] pTaskPool A pointer to the task pool storage to be initialized. 
+* The pointer `pTaskPool` will hold a valid handle only if (@ref taskpool_function_create) 
+* completes succesfully.
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
@@ -158,16 +157,21 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Create( const AwsIotTaskPoolInfo_t * const 
 * @brief De-initialization function for a Task Pool of the Task Pool library.
 *
 * This function should be called to destroy one instance of a Task
-* Pool and release all underlying resources. Any job scheduled but not yet executing will be
-* cancelled and its memory will be freed. Any thread waiting on a job that was scheduled
-* against this task pool will be released. The `pTaskPool` instance will no longer be valid after this
-* function returns.
+* Pool previously created with a call to @ref AwsIotTaskPool_Create or @ref AwsIotTaskPool_GetSystemTaskPool 
+* and release all underlying resources. After calling this function, any job scheduled but not yet executed 
+* will be cancelled and uninitialized, as if the user called @ref AwsIotTaskPool_DestroyJob on every job 
+* previously scheduled. 
+* The `pTaskPool` instance will no longer be valid after this function returns.
 *
-* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create. The `pTaskPool` instance will no longer be valid after this
-* function returns.
-*
+* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create. 
+* The `pTaskPool` instance will no longer be valid after this function returns.
+*  
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
+* - #AWS_IOT_TASKPOOL_BAD_PARAMETER
+*
+* @warning Calling this function will destroy the wait handle for a job, and that will result in undefined 
+* behaviour if any thread was waiting on a job when the task pool is destroyed. 
 *
 */
 /* @[declare_taskpool_destroy] */
@@ -177,13 +181,14 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool );
 /**
 * @brief This function sets the maximum number of threads at runtime.
 *
-* This function ssets the maximum number of threads for the task pool
+* This function sets the maximum number of threads for the task pool
 * pointed to by `pTaskPool`.
 *
-* If the number of currently active threads in the task ppol is greater than `maxThreads`, this
+* If the number of currently active threads in the task pool is greater than `maxThreads`, this
 * function causes the task pool to shrink the number of active threads.
 *
-* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create.
+* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
+* a call to @ref taskpool_function_create.
 * @param[in] maxThreads The maximum number of threads for the task pool.
 *
 * @return One of the following:
@@ -196,15 +201,15 @@ AwsIotTaskPoolError_t AwsIotTaskPool_SetMaxThreads( AwsIotTaskPool_t * pTaskPool
 /* @[declare_taskpool_setmaxthreads] */
 
 /**
-* @brief This function creates a job for the task pool from a user-provided storage.
+* @brief This function creates a job for the task pool around a user-provided storage.
 *
-* This function may allocate memory to hold the state for a job. 
+* This function may allocate memory to hold the state for a job and a wait handle. 
 *
-* @param[in] userCallback The callback for the job.
-* @param[in] pUserContext A user specified context for the callback.
-* @param[out] pJob A pointer to a handle that will be populated when this function returns succesfully. This handle can be used to
-* wait on the job with @ref AwsIotTaskPool_Wait, inspect the job status with @ref AwsIotTaskPool_GetStatus or cancel the
-* job with @ref AwsIotTaskPool_TryCancel.
+* @param[in] userCallback A user-specified callback for the job.
+* @param[in] pUserContext A user-specified context for the callback.
+* @param[out] pJob A pointer to an instance of @ref AwsIotTaskPoolJob_t that will be initialized when this 
+* function returns succesfully. This handle can be used to wait on the job with @ref AwsIotTaskPool_Wait, 
+* inspect the job status with @ref AwsIotTaskPool_GetStatus or cancel the job with @ref AwsIotTaskPool_TryCancel.
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
@@ -235,10 +240,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob(
 * - #AWS_IOT_TASKPOOL_BAD_PARAMETER
 * - #AWS_IOT_TASKPOOL_ILLEGAL_OPERATION
 *
-* @warning The `pTaskPool` used in this function should be the same
-* used to create the job pointed to by `pJob`, or the results will be undefined.
-* @warning The task pool will try and prevent destroying jobs that are currently queues for execution, but does 
-* not enforce strict ordering of operatios. It is up to the user to make sure @ref AwsIotTaskPool_DestroyJob is not called
+* @warning The task pool will try and prevent destroying jobs that are currently queued for execution, but does 
+* not enforce strict ordering of operations. It is up to the user to make sure @ref AwsIotTaskPool_DestroyJob is not called
 * our of order.
 *
 */
@@ -250,11 +253,12 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 * @brief This function schedules a job created with @ref taskpool_function_createjob against the task pool
 * pointed to by `pTaskPool`.
 *
-* See @ref taskpool_design for a description of the jobs lifetime and interactio with the threads used in the Task Pool
+* See @ref taskpool_design for a description of the jobs lifetime and interaction with the threads used in the Task Pool
 * library.
 * 
-* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create.
-* @param[in] pJob A job to schedule for execution. This handle is created with a call to @ref taskpool_function_createjob.
+* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
+* a call to @ref taskpool_function_create.
+* @param[in] pJob A job to schedule for execution. This must be first initialized with a call to @ref taskpool_function_createjob.
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
@@ -286,8 +290,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *
 *     pUserContext->counter++;
 *
-*     // Recycle the job into the task pool cache.
-*     AwsIotTaskPool_RecycleJob( pTaskPool, pJob );
+*     // Destroy the job.
+*     AwsIotTaskPool_DestroyJob( pTaskPool, pJob );
 * }
 *
 * void TaskPoolExample( )
@@ -305,7 +309,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
 *
 *     // Statically allocate one job, schedule it, then wait.
-*     AwsIotTaskPool_CreateJob( pTaskPool, NULL, &ExecutionCb, &userContext, &job );
+*     AwsIotTaskPool_CreateJob( &ExecutionCb, &userContext, &job );
 *
 *     AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, &job );
 *
@@ -313,9 +317,9 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     {
 *     case AWS_IOT_TASKPOOL_SUCCESS:
 *         break;
-*     case AWS_IOT_TASKPOOL_BAD_PARAMETER:              // Invalid parameters, such as a NULL handle, can trigger this condition.
-*     case AWS_IOT_TASKPOOL_ILLEGAL_OPERATION:    // Scheduling a job that was previously scheduled or recycled could trigger this condition.
-*     case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS: // Scheduling a job after destroying the task pool could trigger this operation.
+*     case AWS_IOT_TASKPOOL_BAD_PARAMETER:          // Invalid parameters, such as a NULL handle, can trigger this condition.
+*     case AWS_IOT_TASKPOOL_ILLEGAL_OPERATION:      // Scheduling a job that was previously scheduled or destroyed could trigger this condition.
+*     case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:   // Scheduling a job after trying to destroy the task pool could trigger this operation.
 *         // ASSERT
 *         break;
 *     default:
@@ -323,7 +327,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     }
 *
 *     //
-*     // Perform other operations
+*     // ... Perform other operations ...
 *     //
 *
 *     // Wait for the operation to be completed.
@@ -336,8 +340,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     case AWS_IOT_TASKPOOL_TIMEDOUT:
 *         // ASSERT: Timeout cannot happen because AwsIotTaskPool_Wait waits forever.
 *         break;
-*     case AWS_IOT_TASKPOOL_BAD_PARAMETER:               // Invalid parameters, such as a NULL handle, can trigger this condition.
-*     case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:  // Scheduling a job after destroying the task pool could trigger this operation.
+*     case AWS_IOT_TASKPOOL_BAD_PARAMETER:          // Invalid parameters, such as a NULL handle, can trigger this condition.
+*     case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:   // Scheduling a job after destroying the task pool could trigger this operation.
 *         // ASSERT: Make sure the application did not shutdown the task pool and tried to use it afterwards.
 *         break;
 *     default:
@@ -345,9 +349,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     }
 *
 *     //
-*     // Perform other operations
+*     // ... Perform other operations ...
 *     //
-*     // ...
 *
 *     AwsIotTaskPool_Destroy( pTaskPool );
 * }
@@ -362,7 +365,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPoo
 *
 * See @ref taskpool_function_schedule for a complete flow involving scheduling and waiting for jobs to complete. 
 * 
-* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create.
+* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
+* a call to @ref taskpool_function_create.
 * @param[in] pJob The job to be wait on.
 *
 * @return One of the following:
@@ -370,12 +374,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPoo
 * - #AWS_IOT_TASKPOOL_BAD_PARAMETER
 * - #AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS
 *
-* @warning This function can be called only once for each job.
-* 
-* @warning This function may allocate memory if the job to wait on does not have yet an associated synchronization object.
-*
-* @warning The `pTaskPool` used in this function should be the same
-* used to create the job pointed to by `pJob`, or the results will be undefined.
+* @warning This function can be called only once for each scheduled job.
 *
 */
 /* @[declare_taskpool_wait] */
@@ -383,11 +382,12 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Wait( const AwsIotTaskPool_t * pTaskPool, A
 /* @[declare_taskpool_wait] */
 
 /**
-* @brief This function blocks the calling thread until the job specified by `pJob` completes or is canceled.
+* @brief This function blocks the calling thread until the job completes, is canceled, or the timeout elapses.
 *
 * See @ref taskpool_function_schedule for a complete flow involving scheduling and waiting for jobs to complete. 
 * 
-* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create.
+* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
+* a call to @ref taskpool_function_create.
 * @param[in] pJob The job to be wait on.
 * @param[in] timeoutMs The time in milliseconds to wait for the job to be executed.
 *
@@ -427,17 +427,21 @@ AwsIotTaskPoolError_t AwsIotTaskPool_GetStatus( const AwsIotTaskPoolJob_t * pJob
 /**
 * @brief This function tries to cancel a job that was previously scheduled with @ref AwsIotTaskPool_Schedule.
 *
-* A job can be canceled only if it is not yet executing. blocks the calling thread until the job specified
-* by `pJob` completes or is canceled.
+* A job can be canceled only if it is not yet executing, i.e. if its status is 
+* @ref AWS_IOT_TASKPOOL_STATUS_READY or @ref AWS_IOT_TASKPOOL_STATUS_SCHEDULED. Calling 
+* @ref AwsIotTaskPool_TryCancel on a job whose status is @ref AWS_IOT_TASKPOOL_STATUS_EXECUTING, 
+* @ref AWS_IOT_TASKPOOL_STATUS_COMPLETED, or @AWS_IOT_TASKPOOL_STATUS_CANCELED will yield 
+* a @AWS_IOT_TASKPOOL_CANCEL_FAILED return result.
 *
-* @param[in] pTaskPool A handle to the task pool, e.g. as returned by a call to @ref taskpool_function_create.
+* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
+* a call to @ref taskpool_function_create.
 * @param[in] pJob The job to cancel.
 * @param[out] pStatus The status of the job at the time of cancellation.
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
 * - #AWS_IOT_TASKPOOL_BAD_PARAMETER
-* - #AWS_IOT_TASKPOOL_FAILED
+* - #AWS_IOT_TASKPOOL_CANCEL_FAILED
 * - #AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS
 *
 * @warning The `pTaskPool` used in this function should be the same

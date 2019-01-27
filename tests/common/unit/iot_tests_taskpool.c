@@ -547,7 +547,7 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
             TEST_ASSERT( statusAfterCancellation == AWS_IOT_TASKPOOL_STATUS_CANCELED );
         }
         break;
-        case AWS_IOT_TASKPOOL_FAILED:
+        case AWS_IOT_TASKPOOL_CANCEL_FAILED:
         {
             TEST_ASSERT( ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_EXECUTING ) || ( statusAtCancellation == AWS_IOT_TASKPOOL_STATUS_COMPLETED ) );
 
