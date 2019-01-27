@@ -3,7 +3,7 @@
 @anchor taskpool
 @brief Task Pool library.
 
-> A Task Pool is an adaptive set of threads that can grow and shrink to execute a user-provided callback through a user-defined work item that can be scheduled with a non-blocking call. The design principles are to minimize the memory footprint while allowing asynchrnous execution. The adaptive behavior allows serving work items in a timely way, without allocating system resources for the entire duration of the application. The user does not have to worry about synchronization and thread management. 
+> A Task Pool is an adaptive set of threads that can grow and shrink to execute a user-provided callback through a user-defined job that can be scheduled with a non-blocking call. The design principles are to minimize the memory footprint while allowing asynchrnous execution. The adaptive behavior allows serving jobs in a timely way, without allocating system resources for the entire duration of the application. The user does not have to worry about synchronization and thread management. 
 
 Features of this library include:
 - Both fully asynchronous and blocking API functions.
@@ -45,20 +45,20 @@ digraph taskpool_dependencies
 @enddot
 
 Currently, the Task Pool library has the following dependencies:
-- The queue library for maintains the data structures for managing scheduled and in-progress Task Pool operations.
+- The linear containers (list/queue) library for maintaining the data structures for scheduled and in-progress Task Pool operations.
 - The logging library may be used if @ref AWS_IOT_LOG_LEVEL_TASKPOOL is not @ref AWS_IOT_LOG_NONE.
 - The platform layer provides an interface to the operating system for thread management, clock functions, networking, etc.
 
-In addition to the components above, the Task Pool library also depends on C standard library headers.
+In addition to the components above, the Task Pool library may also depend on C standard library headers.
 */
 
 /**
 @page taskpool_design Design
 @brief Architecture behind the Task Pool library.
 
-This library uses a user-specified set of threads to process work items speficied by the user as a callback and a context. User work items are queued through a non-blocking call and processed asynchronously in the order they are received. User can explicitly chain work items to guarantee FIFO order execution in a concurrent environment where different threads or tasks in the system may schedule work items against the same Task Pool. Work items will execute 
+This library uses a user-specified set of threads to process jobs speficied by the user as a callback and a context. User jobs are queued through a non-blocking call and processed asynchronously in the order they are received.
 - [Task Pool API functions](@ref taskpool_functions) Provides a set of functions to enqueue an asynchronous operation on the <b>Dispatch Queue</b>. API functions are non-blocking and return after successfully enqueuing an operation.
-- <b>Worker threads</b> in the Task Pool are woken up when operations arrive in the dispatch queue. These threads remove operations from the dispatch queue in FIFO order and execute the user-provided callback. After executing the user callback, the Task Pool threads try and execute any remaining work items in the dispatch queue. The Task Pool tries and execute a user work item as soon as it is received and if there are no threads available it will try and create one, up to the maximum number of allowed threads. The user can specificy the minimum and maximum number of threads allowed when creating the task pool.
+- <b>Worker threads</b> in the Task Pool are woken up when operations arrive in the dispatch queue. These threads remove operations from the dispatch queue in FIFO order and execute the user-provided callback. After executing the user callback, the Task Pool threads try and execute any remaining jobs in the dispatch queue. The Task Pool tries and execute a user job as soon as it is received and if there are no threads available it will try and create one, up to the maximum number of allowed threads. The user can specificy the minimum and maximum number of threads allowed when creating the task pool.
 - The user can wait on a scheduled task or try and cancel it, after the task has been scheduled. Cancellation is only allowed before the task enters execution. Wating on a completed task returns immediately.
 
 Threads are created with @ref platform_threads_function_createdetachedthread. Because the platform layer may be re-implemented across systems, threads will be allocated for the Task Pool library on-the-go on some systems, while other systems may use an always-allocated thread pool.
@@ -72,7 +72,7 @@ The sequence diagram below illustrates the workflow described above. The applica
 @page taskpool_demo Demo
 @brief The Task Pool demo demonstrates usage of the Task Pool library.
 
-The Task Pool demo demonstrates the create-schedule-wait workflow of Task Pool. After creating multiple work items, it schedules all work items and wait on their completion.
+The Task Pool demo demonstrates the create-schedule-wait workflow of Task Pool. After creating multiple jobs, it schedules all jobs and wait on their completion.
 
 @image html taskpool_demo.png "Task Pool Demo Workflow" width=80%
 
@@ -87,7 +87,7 @@ The main Task Pool demo file, aws_iot_demo_taskpool.c, contains platform-indepen
 @page taskpool_tests Tests
 @brief Tests written for the Task Pool library.
 
-The Task Pool tests reside in the `tests/taskpool` directory. They are divided into the following subdirectories:
+The Task Pool tests are divided into the following subdirectories:
 - `system`: Task Pool system and stress tests. Stress tests may run for a long time, so they are not run unless the [-l option is passed to the test executable](@ref taskpool_tests_optionl).
 - `unit`: Task Pool unit tests. These tests do not require a network connection.
 
@@ -129,7 +129,6 @@ make
 
 The Makefile will generate four test executables:
 - `aws_iot_tests_taskpool_aws`: Tests against AWS IoT in dynamic memory mode.
-- `aws_iot_tests_taskpool_aws_static`: Tests against AWS IoT in static memory only mode.
 
 Run `make clean` to remove all test executables.
 
@@ -154,9 +153,6 @@ By default, the Task Pool test executables don't run the stress tests, which may
 
 /**
 @configpage{taskpool,Task Pool library}
-
-@section AWS_IOT_TASKPOOL_WORKTEIM_RECYCLE_LIMIT
-@brief Set this to the maximum number of work items to recycle after execution. Higher value limit the number of memory allocations, but uses more memory in steady state.
 
 @section AWS_IOT_TASKPOOL_THREADS_STACK_MIN
 @brief Set this to minimum stack depth to be enforced at runtime.
