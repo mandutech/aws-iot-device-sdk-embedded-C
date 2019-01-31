@@ -138,7 +138,6 @@
 */
 #define AWS_IOT_TASKPOOL_STATUS_MASK                         0x0F /* Lower 4 bits reserved for status (AwsIotTaskPoolJobStatus_t). */
 #define AWS_IOT_TASKPOOL_FLAGS_MASK                          0xF0 /* Upper 4 bits reserved for flags. */
-#define AWS_IOT_TASK_POOL_INTERNAL_MARKED_FOR_WAIT           0x40
 /** @endcond */
 
 #endif /* ifndef _AWS_IOT_TASKPOOL_INTERNAL_H_ */

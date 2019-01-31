@@ -61,8 +61,6 @@
 * - @functionname{taskpool_function_createjob}
 * - @functionname{taskpool_function_destroyjob}
 * - @functionname{taskpool_function_schedule}
-* - @functionname{taskpool_function_wait}
-* - @functionname{taskpool_function_timedwait}
 * - @functionname{taskpool_function_getstatus}
 * - @functionname{taskpool_function_trycancel}
 */
@@ -73,11 +71,9 @@
 * @functionpage{AwsIotTaskPool_Create,taskpool,create}
 * @functionpage{AwsIotTaskPool_Destroy,taskpool,destroy}
 * @functionpage{AwsIotTaskPool_SetMaxThreads,taskpool,setmaxthreads}
-* @functionpage{AwsIotTaskPool_CreateJob,taskpool,createjob}
+* @functionpage{AwsIotTaskPool_CreateJobStatic,taskpool,createjob}
 * @functionpage{AwsIotTaskPool_DestroyJob,taskpool,destroyjob}
 * @functionpage{AwsIotTaskPool_Schedule,taskpool,schedule}
-* @functionpage{AwsIotTaskPool_Wait,taskpool,wait}
-* @functionpage{AwsIotTaskPool_TimedWait,taskpool,timedwait}
 * @functionpage{AwsIotTaskPool_GetStatus,taskpool,getstatus}
 * @functionpage{AwsIotTaskPool_TryCancel,taskpool,trycancel}
 */
@@ -170,9 +166,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Create( const AwsIotTaskPoolInfo_t * const 
 * - #AWS_IOT_TASKPOOL_SUCCESS
 * - #AWS_IOT_TASKPOOL_BAD_PARAMETER
 *
-* @warning Calling this function will destroy the wait handle for a job, and that will result in undefined 
-* behaviour if any thread was waiting on a job when the task pool is destroyed. 
-*
 */
 /* @[declare_taskpool_destroy] */
 AwsIotTaskPoolError_t AwsIotTaskPool_Destroy( AwsIotTaskPool_t * pTaskPool );
@@ -203,37 +196,36 @@ AwsIotTaskPoolError_t AwsIotTaskPool_SetMaxThreads( AwsIotTaskPool_t * pTaskPool
 /**
 * @brief This function creates a job for the task pool around a user-provided storage.
 *
-* This function may allocate memory to hold the state for a job and a wait handle. 
+* This function may allocate memory to hold the state for a job. 
 *
 * @param[in] userCallback A user-specified callback for the job.
 * @param[in] pUserContext A user-specified context for the callback.
 * @param[out] pJob A pointer to an instance of @ref AwsIotTaskPoolJob_t that will be initialized when this 
-* function returns succesfully. This handle can be used to wait on the job with @ref AwsIotTaskPool_Wait, 
-* inspect the job status with @ref AwsIotTaskPool_GetStatus or cancel the job with @ref AwsIotTaskPool_TryCancel.
+* function returns succesfully. This handle can be used to inspect the job status with 
+* @ref AwsIotTaskPool_GetStatus or cancel the job with @ref AwsIotTaskPool_TryCancel, etc....
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
 * - #AWS_IOT_TASKPOOL_BAD_PARAMETER
-* - #AWS_IOT_TASKPOOL_NO_MEMORY
 * - #AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS
 *
 *
 */
-/* @[declare_taskpool_createjob] */
-AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob(
+/* @[declare_taskpool_createjobstatic] */
+AwsIotTaskPoolError_t AwsIotTaskPool_CreateJobStatic(
     const IotTaskPoolRoutine_t userCallback,
     void * const pUserContext,
     AwsIotTaskPoolJob_t * const pJob );
-/* @[declare_taskpool_createjob] */
+/* @[declare_taskpool_createjobstatic] */
 
 /**
 * @brief This function uninitializes a job.
 *
-* This function will destroy a job created with @ref AwsIotTaskPool_CreateJob. A job should not be destroyed twice. A job 
+* This function will destroy a job created with @ref AwsIotTaskPool_CreateJobStatic. A job should not be destroyed twice. A job 
 * that was previously scheduled but has not completed yet or a job that was successfully canceled cannot be destroyed. 
 * An attempt to do so will result in an @ref AWS_IOT_TASKPOOL_ILLEGAL_OPERATION error.
 *
-* @param[in] pJob A handle to a job that was create with a call to @ref AwsIotTaskPool_CreateJob.
+* @param[in] pJob A handle to a job that was create with a call to @ref AwsIotTaskPool_CreateJobStatic.
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
@@ -308,8 +300,8 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     // Create a task pool.
 *     AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
 *
-*     // Statically allocate one job, schedule it, then wait.
-*     AwsIotTaskPool_CreateJob( &ExecutionCb, &userContext, &job );
+*     // Statically allocate one job, schedule it.
+*     AwsIotTaskPool_CreateJobStatic( &ExecutionCb, &userContext, &job );
 *
 *     AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, &job );
 *
@@ -329,29 +321,9 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     //
 *     // ... Perform other operations ...
 *     //
+* 
 *
-*     // Wait for the operation to be completed.
-*     AwsIotTaskPoolError_t errorWait =  AwsIotTaskPool_Wait( pTaskPool, &job );
-*
-*     switch ( errorWait )
-*     {
-*     case AWS_IOT_TASKPOOL_SUCCESS:
-*         break;
-*     case AWS_IOT_TASKPOOL_TIMEDOUT:
-*         // ASSERT: Timeout cannot happen because AwsIotTaskPool_Wait waits forever.
-*         break;
-*     case AWS_IOT_TASKPOOL_BAD_PARAMETER:          // Invalid parameters, such as a NULL handle, can trigger this condition.
-*     case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:   // Scheduling a job after destroying the task pool could trigger this operation.
-*         // ASSERT: Make sure the application did not shutdown the task pool and tried to use it afterwards.
-*         break;
-*     default:
-*         // ASSERT: AwsIotTaskPool_Wait should not return any other value.
-*     }
-*
-*     //
-*     // ... Perform other operations ...
-*     //
-*
+*     AwsIotTaskPool_DestroyJob( pJob );
 *     AwsIotTaskPool_Destroy( pTaskPool );
 * }
 * @endcode
@@ -359,53 +331,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 /* @[declare_taskpool_schedule] */
 AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPool, AwsIotTaskPoolJob_t * const pJob );
 /* @[declare_taskpool_schedule] */
-
-/**
-* @brief This function blocks the calling thread until the job specified by `pJob` completes or is canceled.
-*
-* See @ref taskpool_function_schedule for a complete flow involving scheduling and waiting for jobs to complete. 
-* 
-* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
-* a call to @ref taskpool_function_create.
-* @param[in] pJob The job to be wait on.
-*
-* @return One of the following:
-* - #AWS_IOT_TASKPOOL_SUCCESS
-* - #AWS_IOT_TASKPOOL_BAD_PARAMETER
-* - #AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS
-*
-* @warning This function can be called only once for each scheduled job.
-*
-*/
-/* @[declare_taskpool_wait] */
-AwsIotTaskPoolError_t AwsIotTaskPool_Wait( const AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * const pJob );
-/* @[declare_taskpool_wait] */
-
-/**
-* @brief This function blocks the calling thread until the job completes, is canceled, or the timeout elapses.
-*
-* See @ref taskpool_function_schedule for a complete flow involving scheduling and waiting for jobs to complete. 
-* 
-* @param[in] pTaskPool A handle to the task pool that must have been previously initialized with 
-* a call to @ref taskpool_function_create.
-* @param[in] pJob The job to be wait on.
-* @param[in] timeoutMs The time in milliseconds to wait for the job to be executed.
-*
-* @return One of the following:
-* - #AWS_IOT_TASKPOOL_SUCCESS
-* - #AWS_IOT_TASKPOOL_BAD_PARAMETER
-* - #AWS_IOT_TASKPOOL_TIMEDOUT
-* - #AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS
-*
-* @warning This function may allocate memory if the job to wait on does not have yet an associated synchronization object.
-*
-* @warning The `pTaskPool` used in this function should be the same
-* used to create the job pointed to by `pJob`, or the results will be undefined.
-*
-*/
-/* @[declare_taskpool_timedwait] */
-AwsIotTaskPoolError_t AwsIotTaskPool_TimedWait( const AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * const pJob, uint64_t timeoutMs );
-/* @[declare_taskpool_timedwait] */
 
 /**
 * @brief This function retrieves the current status of a job.

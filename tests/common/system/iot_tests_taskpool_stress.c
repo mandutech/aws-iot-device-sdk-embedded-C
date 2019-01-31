@@ -76,11 +76,14 @@
 #endif 
 
  /**
- * @brief Define the stress job max duration time (emulated duration).
+ * @brief A global delay to wait for threads to exit or such...
  */
-#ifndef _TASKPOOL_TEST_WAIT_TIME
-#define _TASKPOOL_TEST_WAIT_TIME     ( 60 * 60 * 1000 ) /* One hour in milli-seconds. */
-#endif
+static struct itimerspec _TEST_DELAY_50MS =
+{
+    .it_value.tv_sec  = 0,
+    .it_value.tv_nsec = ( 50000000L ), /* 50ms */
+    .it_interval      = { 0 }
+};
 
  /**
  * @brief Active jobs created by the stress application.
@@ -208,7 +211,7 @@ static void ExecutionWithoutDestroyCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskP
 */
 StressJob_t * CreateWorkItem__Single( AwsIotTaskPoolJob_t * pJob )
 {
-    AwsIotTaskPoolError_t error = AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, pJob );
+    AwsIotTaskPoolError_t error = AwsIotTaskPool_CreateJobStatic( &ExecutionWithDestroyCb, NULL, pJob );
 
     if ( error == AWS_IOT_TASKPOOL_SUCCESS )
     {
@@ -281,7 +284,22 @@ TEST( Common_Stress_TaskPool, SingleWorkItems )
             {
                 StressJob_t * pStressItem = IotLink_Container( StressJob_t, pLink, activeRequestsLink );
 
-                TEST_ASSERT( AwsIotTaskPool_Wait( &taskPool, pStressItem->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+                /* Ensure callback actually executed. */
+                while ( true )
+                {
+                    AwsIotTaskPoolJobStatus_t status = AWS_IOT_TASKPOOL_STATUS_READY;
+
+                    TEST_ASSERT( AwsIotTaskPool_GetStatus( pStressItem->pJob, &status ) == AWS_IOT_TASKPOOL_SUCCESS );
+
+                    if ( status != AWS_IOT_TASKPOOL_STATUS_COMPLETED )
+                    {
+                        ( void )clock_nanosleep( CLOCK_REALTIME, 0, &_TEST_DELAY_50MS.it_value, NULL );
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
             }
         }
 
@@ -378,8 +396,22 @@ TEST( Common_Stress_TaskPool, SingleWorkItemsPlusCancellation )
                     {
                         continue;
                     }
+                    else
+                    {
+                        while ( true )
+                        {
+                            TEST_ASSERT( AwsIotTaskPool_GetStatus( pItem->pJob, &status ) == AWS_IOT_TASKPOOL_SUCCESS );
 
-                    TEST_ASSERT( AwsIotTaskPool_Wait( &taskPool, pItem->pJob ) == AWS_IOT_TASKPOOL_SUCCESS );
+                            if ( status != AWS_IOT_TASKPOOL_STATUS_COMPLETED )
+                            {
+                                ( void )clock_nanosleep( CLOCK_REALTIME, 0, &_TEST_DELAY_50MS.it_value, NULL );
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 

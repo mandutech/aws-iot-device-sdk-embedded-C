@@ -67,8 +67,6 @@ typedef enum AwsIotTaskPoolError
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_createjob
     * - @ref taskpool_function_schedule
-    * - @ref taskpool_function_wait
-    * - @ref taskpool_function_timedwait
     * - @ref taskpool_function_getstatus
     * - @ref taskpool_function_trycancel
     *
@@ -85,8 +83,6 @@ typedef enum AwsIotTaskPoolError
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_createjob
     * - @ref taskpool_function_schedule
-    * - @ref taskpool_function_wait
-    * - @ref taskpool_function_timedwait
     * - @ref taskpool_function_getstatus
     * - @ref taskpool_function_trycancel
     *
@@ -100,8 +96,6 @@ typedef enum AwsIotTaskPoolError
     * - @ref taskpool_function_createsystemtaskpool
     * - @ref taskpool_function_destroyjob
     * - @ref taskpool_function_schedule
-    * - @ref taskpool_function_wait
-    * - @ref taskpool_function_timedwait
     * - @ref taskpool_function_trycancel
     *
     */
@@ -116,8 +110,6 @@ typedef enum AwsIotTaskPoolError
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_createjob
     * - @ref taskpool_function_schedule
-    * - @ref taskpool_function_wait
-    * - @ref taskpool_function_timedwait
     * - @ref taskpool_function_getstatus
     *
     */
@@ -127,7 +119,6 @@ typedef enum AwsIotTaskPoolError
     * @brief Task Pool operation failed because of out of memory condition.
     *
     * Functions that may return this value:
-    * - @ref taskpool_function_timedwait
     *
     */
     AWS_IOT_TASKPOOL_TIMEDOUT,
@@ -138,9 +129,6 @@ typedef enum AwsIotTaskPoolError
     * Functions that may return this value:
     * - @ref taskpool_function_setmaxthreads
     * - @ref taskpool_function_schedule
-    * - @ref taskpool_function_wait
-    * - @ref taskpool_function_timedwait
-    * - @ref taskpool_function_timedwait
     *
     */
     AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS,
@@ -292,7 +280,6 @@ typedef struct AwsIotTaskPool
 /**
 * @ingroup taskpool_datatypes_types
 * @brief The job data structure keeps track of the user callback and context, as well as the status of the job.
-* A job can be appended to a queue and hosts a synchronization object for the user to wait on its completion.
 *
 * @warning This is a system-level data type that should not be modified.
 *
@@ -301,7 +288,6 @@ typedef struct AwsIotTaskPoolJob
 {
     IotTaskPoolRoutine_t      userCallback;  /**< @brief The user provided callback. */
     void *                    pUserContext;  /**< @brief The user provided context. */
-    AwsIotSemaphore_t         waitHandle;    /**< @brief The wait handle for the user to wait on the job completion. */
     IotLink_t                 link;          /**< @brief The link to insert the job in the dispatch queue. */
     AwsIotTaskPoolJobStatus_t status;        /**< @brief The status for the job. */
 } AwsIotTaskPoolJob_t;

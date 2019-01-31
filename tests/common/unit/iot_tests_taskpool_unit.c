@@ -36,7 +36,7 @@
 #include <string.h>
 
 /* POSIX includes. */
-//#include <time.h>
+#include <time.h>
 
 /* Platform layer includes. */
 #include "platform/aws_iot_threads.h"
@@ -107,7 +107,7 @@ TEST_GROUP_RUNNER( Common_Unit_TaskPool )
 * @brief Number of iterations for each test loop.
 */
 #ifndef _TASKPOOL_TEST_ITERATIONS
-#define _TASKPOOL_TEST_ITERATIONS ( 2000 )
+#define _TASKPOOL_TEST_ITERATIONS ( 200 )
 #endif
 
 /**
@@ -120,7 +120,7 @@ TEST_GROUP_RUNNER( Common_Unit_TaskPool )
 /**
 * @brief A global delay to wait for threads to exit or such...
 */
-struct itimerspec _TEST_DELAY_50MS =
+static struct itimerspec _TEST_DELAY_50MS =
 {
     .it_value.tv_sec  = 0,
     .it_value.tv_nsec = ( 50000000L ), /* 50ms */
@@ -279,9 +279,9 @@ TEST( Common_Unit_TaskPool, TaskPool_CreateJobError )
         AwsIotTaskPoolJob_t job;
 
         /* NULL callback. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJob( NULL, NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( NULL, NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
         /* NULL job handle. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
+        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( &ExecutionWithDestroyCb, NULL, NULL ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
     }
 
     CleanupDelay( );
@@ -301,7 +301,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasksError )
 
     AwsIotTaskPoolJob_t job;
 
-    TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
+    TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( &ExecutionWithDestroyCb, NULL, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
 
     /* NULL Task Pool Handle. */
     TEST_ASSERT( AwsIotTaskPool_Schedule( NULL, &job ) == AWS_IOT_TASKPOOL_BAD_PARAMETER );
@@ -338,7 +338,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleOneThenWait )
         TEST_ASSERT( AwsIotMutex_Create( &userContext.lock ) );
 
         /* Shedule the job NOT to be recycle in the callback, since the buffer is statically allocated. */
-        TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithoutDestroyCb, &userContext, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
+        TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( &ExecutionWithoutDestroyCb, &userContext, &job ) == AWS_IOT_TASKPOOL_SUCCESS );
 
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
@@ -358,22 +358,23 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleOneThenWait )
                 TEST_ASSERT( false );
             }
 
-            AwsIotTaskPoolError_t errorWait =  AwsIotTaskPool_Wait( &taskPool, &job );
-
-            switch ( errorWait )
+            /* Ensure callback actually executed. */
+            while ( true )
             {
-            case AWS_IOT_TASKPOOL_SUCCESS:
-                break;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-            case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:
-            case AWS_IOT_TASKPOOL_TIMEDOUT:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
+                ( void )clock_nanosleep( CLOCK_REALTIME, 0, &_TEST_DELAY_50MS.it_value, NULL );
+
+                AwsIotMutex_Lock( &userContext.lock );
+
+                if ( userContext.counter == scheduled )
+                {
+                    AwsIotMutex_Unlock( &userContext.lock );
+
+                    break;
+                }
+
+                AwsIotMutex_Unlock( &userContext.lock );
             }
 
-            /* Ensure callback actually executed. */
             TEST_ASSERT( userContext.counter == scheduled );
         }
 
@@ -418,7 +419,7 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleAllThenWait )
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
         {
             /* Shedule the job NOT to be recycle in the callback, since the buffer is statically allocated. */
-            TEST_ASSERT( AwsIotTaskPool_CreateJob( &ExecutionWithoutDestroyCb, &userContext, &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
+            TEST_ASSERT( AwsIotTaskPool_CreateJobStatic( &ExecutionWithoutDestroyCb, &userContext, &tpJobs[ count ] ) == AWS_IOT_TASKPOOL_SUCCESS );
 
             AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( &taskPool, &tpJobs[ count ] );
 
@@ -436,25 +437,23 @@ TEST( Common_Unit_TaskPool, TaskPool_ScheduleTasks_ScheduleAllThenWait )
             }
         }
 
-        for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
+        /* Wait until callback is executed. */
+        while ( true )
         {
-            AwsIotTaskPoolError_t errorWait = AwsIotTaskPool_Wait( &taskPool, &tpJobs[ count ] );
+            ( void )clock_nanosleep( CLOCK_REALTIME, 0, &_TEST_DELAY_50MS.it_value, NULL );
 
-            switch ( errorWait )
+            AwsIotMutex_Lock( &userContext.lock );
+
+            if ( userContext.counter == scheduled )
             {
-            case AWS_IOT_TASKPOOL_SUCCESS:
+                AwsIotMutex_Unlock( &userContext.lock );
+
                 break;
-            case AWS_IOT_TASKPOOL_BAD_PARAMETER:
-            case AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS:
-            case AWS_IOT_TASKPOOL_TIMEDOUT:
-                TEST_ASSERT( false );
-                break;
-            default:
-                TEST_ASSERT( false );
             }
+
+            AwsIotMutex_Unlock( &userContext.lock );
         }
 
-        /* Wait until callback is executed. */
         TEST_ASSERT_TRUE( userContext.counter == scheduled );
 
         for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
@@ -495,7 +494,7 @@ TEST( Common_Unit_TaskPool, TaskPool_CancelTasks )
     /* Create and schedule loop. */
     for ( count = 0; count < _TASKPOOL_TEST_ITERATIONS; ++count )
     {
-        AwsIotTaskPoolError_t errorMake = AwsIotTaskPool_CreateJob( &ExecutionWithoutDestroyCb, &userContext, &jobs[ count ] );
+        AwsIotTaskPoolError_t errorMake = AwsIotTaskPool_CreateJobStatic( &ExecutionWithoutDestroyCb, &userContext, &jobs[ count ] );
 
         switch ( errorMake )
         {

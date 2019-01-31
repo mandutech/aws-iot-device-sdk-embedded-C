@@ -59,7 +59,7 @@ In addition to the components above, the Task Pool library may also depend on C 
 This library uses a user-specified set of threads to process jobs speficied by the user as a callback and a context. User jobs are queued through a non-blocking call and processed asynchronously in the order they are received.
 - [Task Pool API functions](@ref taskpool_functions) Provides a set of functions to enqueue an asynchronous operation on the <b>Dispatch Queue</b>. API functions are non-blocking and return after successfully enqueuing an operation.
 - <b>Worker threads</b> in the Task Pool are woken up when operations arrive in the dispatch queue. These threads remove operations from the dispatch queue in FIFO order and execute the user-provided callback. After executing the user callback, the Task Pool threads try and execute any remaining jobs in the dispatch queue. The Task Pool tries and execute a user job as soon as it is received and if there are no threads available it will try and create one, up to the maximum number of allowed threads. The user can specificy the minimum and maximum number of threads allowed when creating the task pool.
-- The user can wait on a scheduled task or try and cancel it, after the task has been scheduled. Cancellation is only allowed before the task enters execution. Wating on a completed task returns immediately.
+- The user can try and cancel a job after the task has been scheduled. Cancellation is only allowed before the task enters execution. Wating on a completed task returns immediately.
 
 Threads are created with @ref platform_threads_function_createdetachedthread. Because the platform layer may be re-implemented across systems, threads will be allocated for the Task Pool library on-the-go on some systems, while other systems may use an always-allocated thread pool.
 
@@ -72,7 +72,7 @@ The sequence diagram below illustrates the workflow described above. The applica
 @page taskpool_demo Demo
 @brief The Task Pool demo demonstrates usage of the Task Pool library.
 
-The Task Pool demo demonstrates the create-schedule-wait workflow of Task Pool. After creating multiple jobs, it schedules all jobs and wait on their completion.
+The Task Pool demo demonstrates the create-schedule workflow of Task Pool. After creating multiple jobs, it schedules all jobs and wait on their completion, or try and cancel them.
 
 @image html taskpool_demo.png "Task Pool Demo Workflow" width=80%
 

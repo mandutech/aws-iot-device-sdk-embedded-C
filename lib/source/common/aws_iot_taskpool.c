@@ -321,9 +321,9 @@ AwsIotTaskPoolError_t AwsIotTaskPool_SetMaxThreads( AwsIotTaskPool_t * pTaskPool
     return error;
 }
 
-AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob( const IotTaskPoolRoutine_t userCallback,
-                                                void * const pUserContext,
-                                                AwsIotTaskPoolJob_t * const pJob )
+AwsIotTaskPoolError_t AwsIotTaskPool_CreateJobStatic( const IotTaskPoolRoutine_t userCallback, 
+                                                      void * const pUserContext, 
+                                                      AwsIotTaskPoolJob_t * const pJob )
 {
     AwsIotTaskPoolError_t error = AWS_IOT_TASKPOOL_SUCCESS;
 
@@ -341,13 +341,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob( const IotTaskPoolRoutine_t userC
         pJob->userCallback = userCallback;
         pJob->pUserContext = pUserContext;
         pJob->status = AWS_IOT_TASKPOOL_STATUS_READY;
-
-        if ( AwsIotSemaphore_Create( &pJob->waitHandle, 0, 1 ) == false )
-        {
-            AwsIotLogError( "Failed to allocate wait handle." );
-
-            error = AWS_IOT_TASKPOOL_NO_MEMORY;
-        }
     }
 
     return error;
@@ -437,7 +430,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPoo
                     {
                         AwsIotLogInfo( "Growing a Task pool with a new worker thread..." );
 
-                        /* TODO TODO TODO if ( AwsIot_CreateDetachedThread( pTaskPool->stackSize, pTaskPool->priority, _taskPoolWorker, pTaskPool ) ) */
                         if ( AwsIot_CreateDetachedThread( _taskPoolWorker, pTaskPool ) )
                         {
                             AwsIotSemaphore_Wait( &pTaskPool->startStopSignal );
@@ -454,84 +446,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_Schedule( AwsIotTaskPool_t * const pTaskPoo
             }
         }
         _TASKPOOL_EXIT_CRITICAL_SECTION;
-    }
-
-    return error;
-}
-
-AwsIotTaskPoolError_t AwsIotTaskPool_Wait( const AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * const pJob )
-{
-    AwsIotTaskPoolError_t error = AwsIotTaskPool_TimedWait( pTaskPool, pJob, UINT32_MAX );
-
-    return error;
-}
-
-AwsIotTaskPoolError_t AwsIotTaskPool_TimedWait( const AwsIotTaskPool_t * pTaskPool, AwsIotTaskPoolJob_t * const pJob, uint64_t timeoutMs )
-{
-    AwsIotTaskPoolError_t error = AWS_IOT_TASKPOOL_SUCCESS;
-    bool waitable = false;
-
-    /* Parameter checking. */
-    if ( pTaskPool == NULL || 
-         pJob == NULL )
-    {
-        error = AWS_IOT_TASKPOOL_BAD_PARAMETER;
-    }
-    /* Bail out early if this task pool is shutting down. */
-    else if ( _shutdownInProgress( pTaskPool ) )
-    {
-        AwsIotLogWarn( "Attempt to wait a job while shutdown is in progress." );
-
-        error = AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS;
-    }
-    else
-    {
-        _TASKPOOL_ENTER_CRITICAL_SECTION;
-        {
-            /* Check again for shut down. */
-            if ( _shutdownInProgress( pTaskPool ) )
-            {
-                AwsIotLogWarn( "Attempt to wait a job while shutdown is in progress." );
-
-                error = AWS_IOT_TASKPOOL_SHUTDOWN_IN_PROGRESS;
-            }
-            else
-            {
-                AwsIotTaskPoolJobStatus_t currentStatus;
-
-                currentStatus = pJob->status;
-
-                /* Only jobs that are schedulable, scheduled, or executing can be waited on. */
-                switch ( currentStatus )
-                {
-                case AWS_IOT_TASKPOOL_STATUS_READY:
-                case AWS_IOT_TASKPOOL_STATUS_SCHEDULED:
-                case AWS_IOT_TASKPOOL_STATUS_EXECUTING:
-                    waitable = true;
-                    break;
-
-                case AWS_IOT_TASKPOOL_STATUS_COMPLETED:
-                case AWS_IOT_TASKPOOL_STATUS_CANCELED:
-                    break;
-
-                default:
-                    break;
-                }
-            }
-        }
-        _TASKPOOL_EXIT_CRITICAL_SECTION;
-    }
-
-    /* Wait on the job. */
-    if ( waitable )
-    {
-        bool res = AwsIotSemaphore_TimedWait( &pJob->waitHandle, timeoutMs );
-
-        /* Return the appropriate error for the failure case. */
-        if ( res == false )
-        {
-            error = AWS_IOT_TASKPOOL_TIMEDOUT;
-        }
     }
 
     return error;
@@ -632,8 +546,6 @@ AwsIotTaskPoolError_t AwsIotTaskPool_TryCancel( const AwsIotTaskPool_t * pTaskPo
                             AwsIotTaskPool_Assert( currentStatus == AWS_IOT_TASKPOOL_STATUS_SCHEDULED );
 
                             IotQueue_Remove( &pJob->link );
-
-                            AwsIotSemaphore_Post( &pJob->waitHandle );
                         }
                     }
                     else
@@ -695,7 +607,6 @@ static AwsIotTaskPoolError_t _createTaskPool( const AwsIotTaskPoolInfo_t * const
             for ( threadsCreated = 0; threadsCreated < pTaskPool->minThreads; )
             {
                 /* Create one thread. */
-                /* TODO TODO TODO if ( AwsIot_CreateDetachedThread( pTaskPool->stackSize, pTaskPool->priority, _taskPoolWorker, pTaskPool ) == false ) */
                 if ( AwsIot_CreateDetachedThread( _taskPoolWorker, pTaskPool ) == false )
                 {
                     AwsIotLogError( "Could not create worker thread! Exiting..." );
@@ -920,9 +831,6 @@ static void _taskPoolWorker( void * pUserContext )
                 /* Mark the job as 'completed', and signal completion on the associated semaphore. */
                 pJob->status = AWS_IOT_TASKPOOL_STATUS_COMPLETED;
 
-                /* Signal the completion wait handle. */
-                AwsIotSemaphore_Post( &pJob->waitHandle );
-
                 /* Try and dequeue the next job in the dispatch queue. */
                 {
                     IotLink_t * pItem = NULL;
@@ -969,8 +877,6 @@ static void _taskPoolWorker( void * pUserContext )
 
 static void _destroyJob( AwsIotTaskPoolJob_t * const pJob )
 {
-    /* Dispose of the wait handle first. */
-    AwsIotSemaphore_Destroy( &pJob->waitHandle );
 }
 
 /* ---------------------------------------------------------------------------------------------- */
