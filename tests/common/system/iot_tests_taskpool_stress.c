@@ -211,7 +211,7 @@ static void ExecutionWithoutDestroyCb( AwsIotTaskPool_t * pTaskPool, AwsIotTaskP
 */
 StressJob_t * CreateWorkItem__Single( AwsIotTaskPoolJob_t * pJob )
 {
-    AwsIotTaskPoolError_t error = AwsIotTaskPool_CreateJobStatic( &ExecutionWithDestroyCb, NULL, pJob );
+    AwsIotTaskPoolError_t error = AwsIotTaskPool_CreateJob( &ExecutionWithDestroyCb, NULL, pJob );
 
     if ( error == AWS_IOT_TASKPOOL_SUCCESS )
     {

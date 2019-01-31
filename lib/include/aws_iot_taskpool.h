@@ -71,7 +71,7 @@
 * @functionpage{AwsIotTaskPool_Create,taskpool,create}
 * @functionpage{AwsIotTaskPool_Destroy,taskpool,destroy}
 * @functionpage{AwsIotTaskPool_SetMaxThreads,taskpool,setmaxthreads}
-* @functionpage{AwsIotTaskPool_CreateJobStatic,taskpool,createjob}
+* @functionpage{AwsIotTaskPool_CreateJob,taskpool,createjob}
 * @functionpage{AwsIotTaskPool_DestroyJob,taskpool,destroyjob}
 * @functionpage{AwsIotTaskPool_Schedule,taskpool,schedule}
 * @functionpage{AwsIotTaskPool_GetStatus,taskpool,getstatus}
@@ -211,21 +211,21 @@ AwsIotTaskPoolError_t AwsIotTaskPool_SetMaxThreads( AwsIotTaskPool_t * pTaskPool
 *
 *
 */
-/* @[declare_taskpool_createjobstatic] */
-AwsIotTaskPoolError_t AwsIotTaskPool_CreateJobStatic(
+/* @[declare_taskpool_createjob] */
+AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob(
     const IotTaskPoolRoutine_t userCallback,
     void * const pUserContext,
     AwsIotTaskPoolJob_t * const pJob );
-/* @[declare_taskpool_createjobstatic] */
+/* @[declare_taskpool_createjob] */
 
 /**
 * @brief This function uninitializes a job.
 *
-* This function will destroy a job created with @ref AwsIotTaskPool_CreateJobStatic. A job should not be destroyed twice. A job 
+* This function will destroy a job created with @ref AwsIotTaskPool_CreateJob. A job should not be destroyed twice. A job 
 * that was previously scheduled but has not completed yet or a job that was successfully canceled cannot be destroyed. 
 * An attempt to do so will result in an @ref AWS_IOT_TASKPOOL_ILLEGAL_OPERATION error.
 *
-* @param[in] pJob A handle to a job that was create with a call to @ref AwsIotTaskPool_CreateJobStatic.
+* @param[in] pJob A handle to a job that was create with a call to @ref AwsIotTaskPool_CreateJob.
 *
 * @return One of the following:
 * - #AWS_IOT_TASKPOOL_SUCCESS
@@ -301,7 +301,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_DestroyJob( AwsIotTaskPoolJob_t * const pJo
 *     AwsIotTaskPool_Create( &tpInfo, &pTaskPool );
 *
 *     // Statically allocate one job, schedule it.
-*     AwsIotTaskPool_CreateJobStatic( &ExecutionCb, &userContext, &job );
+*     AwsIotTaskPool_CreateJob( &ExecutionCb, &userContext, &job );
 *
 *     AwsIotTaskPoolError_t errorSchedule = AwsIotTaskPool_Schedule( pTaskPool, &job );
 *

@@ -321,7 +321,7 @@ AwsIotTaskPoolError_t AwsIotTaskPool_SetMaxThreads( AwsIotTaskPool_t * pTaskPool
     return error;
 }
 
-AwsIotTaskPoolError_t AwsIotTaskPool_CreateJobStatic( const IotTaskPoolRoutine_t userCallback, 
+AwsIotTaskPoolError_t AwsIotTaskPool_CreateJob( const IotTaskPoolRoutine_t userCallback, 
                                                       void * const pUserContext, 
                                                       AwsIotTaskPoolJob_t * const pJob )
 {
